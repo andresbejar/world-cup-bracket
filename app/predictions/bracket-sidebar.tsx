@@ -5,14 +5,20 @@ import {
   computeGroupStandings,
   GROUP_LETTERS,
   populateR32Slots,
-  type GroupStanding,
   type GroupStandings,
   type MatchScore,
   type SlotAssignment,
   type Team,
 } from "@/lib/bracket";
-import { R32_MATCHES } from "@/lib/bracket-structure";
-import type { HydratedMatch, HydratedTeam } from "@/lib/group-data";
+import {
+  QF_MATCHES,
+  R16_MATCHES,
+  R32_MATCHES,
+  SF_MATCHES,
+  FINAL_MATCH,
+  THIRD_PLACE_MATCH,
+} from "@/lib/bracket-structure";
+import type { HydratedMatch, HydratedRound, HydratedTeam } from "@/lib/group-data";
 
 // The right-column workspace sidebar. Two views — Bracket (R32 slot
 // occupants) and Standings (12 mini group tables) — driven by the same
@@ -24,6 +30,8 @@ interface Props {
   groupMatches: HydratedMatch[];
   /** match_id → predicted score; entries omitted when the user hasn't filled one. */
   predictions: ReadonlyMap<string, { home: number; away: number }>;
+  /** The round the user is currently editing in the left column. Drives the "current round" emphasis band in the bracket tree. */
+  activeRound: HydratedRound | undefined;
 }
 
 type SidebarTab = "bracket" | "standings";
@@ -32,6 +40,7 @@ export function BracketSidebar({
   groupTeams,
   groupMatches,
   predictions,
+  activeRound,
 }: Props) {
   const [tab, setTab] = useState<SidebarTab>("bracket");
 
@@ -83,6 +92,7 @@ export function BracketSidebar({
         <BracketView
           standingsByGroup={standingsByGroup}
           teamCodeById={teamCodeById}
+          activeStage={activeRound?.stage}
         />
       ) : (
         <StandingsView
@@ -132,12 +142,55 @@ function SidebarTabs({
   );
 }
 
+type StageId =
+  | "group"
+  | "r32"
+  | "r16"
+  | "qf"
+  | "sf"
+  | "third_place"
+  | "final";
+
+// SVG bracket tree geometry. All five rounds render as columns of match
+// blocks, with U-shaped connectors between adjacent rounds. The 3rd-place
+// match is tucked under the Final with dashed connectors from each SF
+// (since the 3rd-place game is fed by SF *losers*, not winners).
+const COL_W = 48;
+const COL_GAP = 18;
+const MATCH_H = 28;
+const SLOT_H = 13;
+const TOTAL_H = 16 * 32; // 16 R32 matches × 32px pitch
+const PAD_TOP = 12;
+const PAD_BOT = 80; // room for 3rd-place match + footer
+const VIEW_W = 5 * COL_W + 4 * COL_GAP; // 312
+const VIEW_H = PAD_TOP + TOTAL_H + PAD_BOT;
+
+const colX = (col: number) => col * (COL_W + COL_GAP);
+const matchCenterY = (col: number, idx: number) => {
+  const count = 16 >> col;
+  const pitch = TOTAL_H / count;
+  return PAD_TOP + idx * pitch + pitch / 2;
+};
+
+// Map StageId → column index for the "current round" band.
+const STAGE_COL: Record<StageId, number | null> = {
+  group: null,
+  r32: 0,
+  r16: 1,
+  qf: 2,
+  sf: 3,
+  final: 4,
+  third_place: null, // emphasized via the 3rd-place block, not a column
+};
+
 function BracketView({
   standingsByGroup,
   teamCodeById,
+  activeStage,
 }: {
   standingsByGroup: GroupStandings[];
   teamCodeById: Map<string, string>;
+  activeStage: StageId | undefined;
 }) {
   const r32Slots: SlotAssignment[] = useMemo(
     () => populateR32Slots(standingsByGroup, []),
@@ -149,69 +202,317 @@ function BracketView({
   );
   const filledCount = r32Slots.filter((s) => s.team_id != null).length;
 
+  // Resolve the team code occupying a given slot label. R32 labels are
+  // populated from group standings; downstream slots (r32-match-N-winner,
+  // r16-match-N-winner, etc.) are empty until the user makes knockout
+  // predictions in APT-20.
+  function teamCodeAt(slotLabel: string): string | null {
+    const teamId = slotByLabel.get(slotLabel);
+    if (!teamId) return null;
+    return teamCodeById.get(teamId) ?? teamId;
+  }
+
+  const activeCol = activeStage ? STAGE_COL[activeStage] : null;
+
   return (
     <div role="tabpanel">
       <SectionHeading
-        eyebrow="ROUND OF 32 · LIVE"
-        title="Knockout tree"
-        meta={`${filledCount}/32 SLOTS`}
+        eyebrow="KNOCKOUT · LIVE"
+        title="Bracket"
+        meta={`${filledCount}/32 R32`}
       />
 
-      <ul className="mt-5 grid grid-cols-2 gap-2.5">
-        {R32_MATCHES.map((m) => {
-          const home = slotByLabel.get(m.home_slot_label);
-          const away = slotByLabel.get(m.away_slot_label);
-          return (
-            <li
-              key={m.id}
-              className="rounded-sm border border-border bg-bg p-2.5"
+      <div className="mt-4 overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          className="block w-full min-w-[300px]"
+          aria-label="Knockout bracket — R32 through Final, plus third-place playoff"
+        >
+          {/* Current-round emphasis band */}
+          {activeCol != null ? (
+            <rect
+              x={colX(activeCol) - 4}
+              y={0}
+              width={COL_W + 8}
+              height={PAD_TOP + TOTAL_H}
+              fill="var(--accent)"
+              opacity={0.07}
+              rx={4}
+            />
+          ) : null}
+          {activeStage === "third_place" ? (
+            <rect
+              x={colX(4) - 4}
+              y={PAD_TOP + TOTAL_H + 8}
+              width={COL_W + 8}
+              height={MATCH_H + 16}
+              fill="var(--accent)"
+              opacity={0.07}
+              rx={4}
+            />
+          ) : null}
+
+          {/* Column labels */}
+          {(["R32", "R16", "QF", "SF", "F"] as const).map((label, i) => (
+            <text
+              key={label}
+              x={colX(i) + COL_W / 2}
+              y={PAD_TOP - 2}
+              textAnchor="middle"
+              className="fill-text-dim font-mono"
+              fontSize={8}
+              fontWeight={700}
+              letterSpacing={0.5}
             >
-              <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-dim tabular-nums">
-                R32 · M{m.match_index.toString().padStart(2, "0")}
-              </p>
-              <BracketRow
-                label={labelHint(m.home_slot_label)}
-                team={home ? teamCodeById.get(home) ?? home : null}
-              />
-              <BracketRow
-                label={labelHint(m.away_slot_label)}
-                team={away ? teamCodeById.get(away) ?? away : null}
-              />
-            </li>
-          );
-        })}
-      </ul>
+              {label}
+            </text>
+          ))}
+
+          {/* Connectors: R32→R16, R16→QF, QF→SF, SF→F */}
+          {[0, 1, 2, 3].map((parentCol) => (
+            <Connectors key={parentCol} parentCol={parentCol} />
+          ))}
+
+          {/* R32 match blocks */}
+          {R32_MATCHES.map((m, i) => (
+            <MatchBlock
+              key={m.id}
+              col={0}
+              idx={i}
+              matchIndex={m.match_index}
+              home={teamCodeAt(m.home_slot_label)}
+              away={teamCodeAt(m.away_slot_label)}
+              roundLabel="R32"
+            />
+          ))}
+          {/* R16 → empty until knockout predictions ship (APT-20) */}
+          {R16_MATCHES.map((m, i) => (
+            <MatchBlock
+              key={m.id}
+              col={1}
+              idx={i}
+              matchIndex={m.match_index}
+              home={teamCodeAt(m.home_slot_label)}
+              away={teamCodeAt(m.away_slot_label)}
+              roundLabel="R16"
+            />
+          ))}
+          {QF_MATCHES.map((m, i) => (
+            <MatchBlock
+              key={m.id}
+              col={2}
+              idx={i}
+              matchIndex={m.match_index}
+              home={teamCodeAt(m.home_slot_label)}
+              away={teamCodeAt(m.away_slot_label)}
+              roundLabel="QF"
+            />
+          ))}
+          {SF_MATCHES.map((m, i) => (
+            <MatchBlock
+              key={m.id}
+              col={3}
+              idx={i}
+              matchIndex={m.match_index}
+              home={teamCodeAt(m.home_slot_label)}
+              away={teamCodeAt(m.away_slot_label)}
+              roundLabel="SF"
+            />
+          ))}
+          <MatchBlock
+            col={4}
+            idx={0}
+            matchIndex={1}
+            home={teamCodeAt(FINAL_MATCH.home_slot_label)}
+            away={teamCodeAt(FINAL_MATCH.away_slot_label)}
+            roundLabel="FINAL"
+          />
+
+          {/* 3rd-place match — dashed connectors from SF losers */}
+          <ThirdPlaceBlock
+            home={teamCodeAt(THIRD_PLACE_MATCH.home_slot_label)}
+            away={teamCodeAt(THIRD_PLACE_MATCH.away_slot_label)}
+          />
+        </svg>
+      </div>
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        Best-3rd slots fill once you pick them — APT-22. Bracket extends
-        through R16 → Final in the APT-18 closeout.
+        R32 slots fill from your group predictions. R16 → Final fill once
+        you pick knockout winners (APT-20). Best-3rd slots: APT-22.
       </p>
     </div>
   );
 }
 
-function BracketRow({
-  label,
+function Connectors({ parentCol }: { parentCol: number }) {
+  const childCount = 16 >> (parentCol + 1);
+  // The U-shape connector from each adjacent pair of parent matches
+  // joins at the midpoint and stubs into the child match.
+  return (
+    <g
+      stroke="var(--border)"
+      strokeWidth={1}
+      fill="none"
+      shapeRendering="crispEdges"
+    >
+      {Array.from({ length: childCount }, (_, i) => {
+        const topY = matchCenterY(parentCol, 2 * i);
+        const botY = matchCenterY(parentCol, 2 * i + 1);
+        const midY = matchCenterY(parentCol + 1, i);
+        const parentRight = colX(parentCol) + COL_W;
+        const junction = parentRight + COL_GAP / 2;
+        const childLeft = colX(parentCol + 1);
+        return (
+          <path
+            key={i}
+            d={
+              `M ${parentRight} ${topY} ` +
+              `L ${junction} ${topY} ` +
+              `L ${junction} ${botY} ` +
+              `L ${parentRight} ${botY} ` +
+              `M ${junction} ${midY} ` +
+              `L ${childLeft} ${midY}`
+            }
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function MatchBlock({
+  col,
+  idx,
+  matchIndex,
+  home,
+  away,
+  roundLabel,
+}: {
+  col: number;
+  idx: number;
+  matchIndex: number;
+  home: string | null;
+  away: string | null;
+  roundLabel: string;
+}) {
+  const x = colX(col);
+  const cy = matchCenterY(col, idx);
+  const top = cy - MATCH_H / 2;
+  const homeY = top;
+  const awayY = top + SLOT_H + 2;
+  return (
+    <g>
+      <title>
+        {roundLabel} · M{matchIndex} — {home ?? "—"} vs {away ?? "—"}
+      </title>
+      <SlotBox x={x} y={homeY} width={COL_W} height={SLOT_H} team={home} />
+      <SlotBox x={x} y={awayY} width={COL_W} height={SLOT_H} team={away} />
+    </g>
+  );
+}
+
+function SlotBox({
+  x,
+  y,
+  width,
+  height,
   team,
 }: {
-  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   team: string | null;
 }) {
   return (
-    <p className="mt-1 flex items-baseline justify-between gap-2 font-mono text-sm">
-      <span className="text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        {label}
-      </span>
-      <span
-        className={
-          team
-            ? "font-bold tabular-nums text-text-primary"
-            : "text-text-dim"
-        }
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={2}
+        fill="var(--bg)"
+        stroke="var(--border)"
+        strokeWidth={1}
+      />
+      <text
+        x={x + width / 2}
+        y={y + height / 2 + 3}
+        textAnchor="middle"
+        className={team ? "fill-text-primary" : "fill-text-dim"}
+        fontFamily="var(--font-mono)"
+        fontSize={9}
+        fontWeight={team ? 700 : 400}
+        letterSpacing={0.5}
       >
         {team ?? "—"}
-      </span>
-    </p>
+      </text>
+    </g>
+  );
+}
+
+function ThirdPlaceBlock({
+  home,
+  away,
+}: {
+  home: string | null;
+  away: string | null;
+}) {
+  // 3rd-place match sits below the Final, fed by SF losers via dashed lines.
+  const blockX = colX(4);
+  const blockY = PAD_TOP + TOTAL_H + 16;
+  const blockTop = blockY;
+  const sf1Cy = matchCenterY(3, 0);
+  const sf2Cy = matchCenterY(3, 1);
+  const sfRight = colX(3) + COL_W;
+
+  return (
+    <g>
+      {/* Dashed connectors from each SF down/up to the 3rd-place block */}
+      <path
+        d={`M ${sfRight} ${sf1Cy + MATCH_H / 2 + 4} L ${sfRight} ${blockTop + MATCH_H / 2} L ${blockX} ${blockTop + MATCH_H / 2}`}
+        stroke="var(--border)"
+        strokeWidth={1}
+        strokeDasharray="2 3"
+        fill="none"
+        opacity={0.7}
+      />
+      <path
+        d={`M ${sfRight} ${sf2Cy + MATCH_H / 2 + 4} L ${sfRight + 6} ${sf2Cy + MATCH_H / 2 + 4} L ${sfRight + 6} ${blockTop + MATCH_H / 2 + 6} L ${blockX} ${blockTop + MATCH_H / 2 + 6}`}
+        stroke="var(--border)"
+        strokeWidth={1}
+        strokeDasharray="2 3"
+        fill="none"
+        opacity={0.7}
+      />
+      <text
+        x={blockX + COL_W / 2}
+        y={blockTop - 4}
+        textAnchor="middle"
+        className="fill-text-dim font-mono"
+        fontSize={8}
+        fontWeight={700}
+        letterSpacing={0.5}
+      >
+        3RD
+      </text>
+      <title>3rd-place playoff — {home ?? "—"} vs {away ?? "—"}</title>
+      <SlotBox
+        x={blockX}
+        y={blockTop}
+        width={COL_W}
+        height={SLOT_H}
+        team={home}
+      />
+      <SlotBox
+        x={blockX}
+        y={blockTop + SLOT_H + 2}
+        width={COL_W}
+        height={SLOT_H}
+        team={away}
+      />
+    </g>
   );
 }
 
@@ -371,16 +672,3 @@ function formatGd(n: number): string {
   return n.toString();
 }
 
-// Compress slot-label vocabulary into 5-6 char hints for the sidebar.
-//   "winner-A"      → "W A"
-//   "runner-up-C"   → "R C"
-//   "best-3rd-1"    → "3RD 1"
-function labelHint(label: string): string {
-  const winner = /^winner-([A-L])$/.exec(label);
-  if (winner) return `W ${winner[1]}`;
-  const runner = /^runner-up-([A-L])$/.exec(label);
-  if (runner) return `R ${runner[1]}`;
-  const third = /^best-3rd-(\d)$/.exec(label);
-  if (third) return `3RD ${third[1]}`;
-  return label;
-}

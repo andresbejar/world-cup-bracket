@@ -191,6 +191,7 @@ export function PredictionsClient({
               groupTeams={groupTeams}
               groupMatches={groupMatches}
               predictions={predictions}
+              activeRound={activeRound}
             />
           </aside>
         </div>
