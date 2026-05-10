@@ -1,15 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  computeGroupStandings,
-  GROUP_LETTERS,
-  populateR32Slots,
-  type GroupStandings,
-  type MatchScore,
-  type SlotAssignment,
-  type Team,
-} from "@/lib/bracket";
+import { useState } from "react";
+import { type GroupStandings } from "@/lib/bracket";
 import {
   QF_MATCHES,
   R16_MATCHES,
@@ -18,79 +10,42 @@ import {
   FINAL_MATCH,
   THIRD_PLACE_MATCH,
 } from "@/lib/bracket-structure";
-import type { HydratedMatch, HydratedRound, HydratedTeam } from "@/lib/group-data";
+import type { HydratedRound } from "@/lib/group-data";
 
-// The right-column workspace sidebar. Two views — Bracket (R32 slot
-// occupants) and Standings (12 mini group tables) — driven by the same
-// live computeGroupStandings output. Heavy useMemo so a single score
-// edit doesn't re-render all 12 groups + 16 R32 cards on every keystroke.
+// The right-column workspace sidebar. Two views:
+//   - Bracket: full SVG knockout tree with U-shaped connectors
+//   - Standings: 12 mini group tables
+//
+// All derivation (group standings, R32 + downstream cascade) happens in
+// the parent PredictionsClient — the sidebar is a pure renderer.
 
 interface Props {
-  groupTeams: HydratedTeam[];
-  groupMatches: HydratedMatch[];
-  /** match_id → predicted score; entries omitted when the user hasn't filled one. */
-  predictions: ReadonlyMap<string, { home: number; away: number }>;
-  /** The round the user is currently editing in the left column. Drives the "current round" emphasis band in the bracket tree. */
+  /** Pre-computed by the parent: 12 groups in alpha order with ranked standings. */
+  standingsByGroup: GroupStandings[];
+  /** Pre-computed by the parent: every knockout slot label → team_id occupant (or null). */
+  slotMap: ReadonlyMap<string, string | null>;
+  /** team_id → 3-letter team code. */
+  teamCodeById: ReadonlyMap<string, string>;
+  /** The round the user is currently editing — drives the "current round" emphasis band. */
   activeRound: HydratedRound | undefined;
 }
 
 type SidebarTab = "bracket" | "standings";
 
 export function BracketSidebar({
-  groupTeams,
-  groupMatches,
-  predictions,
+  standingsByGroup,
+  slotMap,
+  teamCodeById,
   activeRound,
 }: Props) {
   const [tab, setTab] = useState<SidebarTab>("bracket");
-
-  const teamCodeById = useMemo(
-    () => new Map(groupTeams.map((t) => [t.id, t.code])),
-    [groupTeams],
-  );
-
-  const standingsByGroup = useMemo(() => {
-    const matchById = new Map(groupMatches.map((m) => [m.id, m]));
-    const scoresByGroup = new Map<string, MatchScore[]>();
-    for (const letter of GROUP_LETTERS) scoresByGroup.set(letter, []);
-    for (const [matchId, score] of predictions) {
-      const m = matchById.get(matchId);
-      if (!m) continue;
-      const bucket = scoresByGroup.get(m.home.group_letter);
-      if (!bucket) continue;
-      bucket.push({
-        home_team_id: m.home.id,
-        away_team_id: m.away.id,
-        home_score: score.home,
-        away_score: score.away,
-      });
-    }
-    const teamsByGroup = new Map<string, Team[]>();
-    for (const letter of GROUP_LETTERS) teamsByGroup.set(letter, []);
-    for (const t of groupTeams) {
-      teamsByGroup.get(t.group_letter)?.push({
-        id: t.id,
-        group_letter: t.group_letter,
-      });
-    }
-    const result: GroupStandings[] = [];
-    for (const letter of GROUP_LETTERS) {
-      const teams = teamsByGroup.get(letter) ?? [];
-      const scores = scoresByGroup.get(letter) ?? [];
-      result.push({
-        group_letter: letter,
-        standings: computeGroupStandings(scores, teams),
-      });
-    }
-    return result;
-  }, [groupTeams, groupMatches, predictions]);
 
   return (
     <div className="rounded-md border border-border bg-surface p-4">
       <SidebarTabs active={tab} onChange={setTab} />
       {tab === "bracket" ? (
         <BracketView
-          standingsByGroup={standingsByGroup}
+          slotMap={slotMap}
           teamCodeById={teamCodeById}
           activeStage={activeRound?.stage}
         />
@@ -184,30 +139,27 @@ const STAGE_COL: Record<StageId, number | null> = {
 };
 
 function BracketView({
-  standingsByGroup,
+  slotMap,
   teamCodeById,
   activeStage,
 }: {
-  standingsByGroup: GroupStandings[];
-  teamCodeById: Map<string, string>;
+  slotMap: ReadonlyMap<string, string | null>;
+  teamCodeById: ReadonlyMap<string, string>;
   activeStage: StageId | undefined;
 }) {
-  const r32Slots: SlotAssignment[] = useMemo(
-    () => populateR32Slots(standingsByGroup, []),
-    [standingsByGroup],
-  );
-  const slotByLabel = useMemo(
-    () => new Map(r32Slots.map((s) => [s.slot_label, s.team_id])),
-    [r32Slots],
-  );
-  const filledCount = r32Slots.filter((s) => s.team_id != null).length;
+  // Count how many R32 slot inputs are populated (winner-A..L, runner-up-A..L,
+  // best-3rd-1..8) for the section-heading meta.
+  const R32_INPUT_LABELS = R32_MATCHES.flatMap((m) => [
+    m.home_slot_label,
+    m.away_slot_label,
+  ]);
+  const filledCount = R32_INPUT_LABELS.filter(
+    (label) => slotMap.get(label) != null,
+  ).length;
 
-  // Resolve the team code occupying a given slot label. R32 labels are
-  // populated from group standings; downstream slots (r32-match-N-winner,
-  // r16-match-N-winner, etc.) are empty until the user makes knockout
-  // predictions in APT-20.
+  // Resolve a slot_label → team code via cascade + team registry.
   function teamCodeAt(slotLabel: string): string | null {
-    const teamId = slotByLabel.get(slotLabel);
+    const teamId = slotMap.get(slotLabel);
     if (!teamId) return null;
     return teamCodeById.get(teamId) ?? teamId;
   }
@@ -337,8 +289,8 @@ function BracketView({
       </div>
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        R32 slots fill from your group predictions. R16 → Final fill once
-        you pick knockout winners (APT-20). Best-3rd slots: APT-22.
+        R32 inputs come from your group predictions. R16 → Final cascade
+        from each round&rsquo;s winner pick. Best-3rd slots: APT-22.
       </p>
     </div>
   );
@@ -521,7 +473,7 @@ function StandingsView({
   teamCodeById,
 }: {
   standingsByGroup: GroupStandings[];
-  teamCodeById: Map<string, string>;
+  teamCodeById: ReadonlyMap<string, string>;
 }) {
   const tieFlagged = standingsByGroup.some((g) =>
     g.standings.some((s) => s.needs_tiebreaker),
@@ -567,7 +519,7 @@ function GroupTable({
   teamCodeById,
 }: {
   group: GroupStandings;
-  teamCodeById: Map<string, string>;
+  teamCodeById: ReadonlyMap<string, string>;
 }) {
   return (
     <li className="rounded-sm border border-border bg-bg">

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeFinalistPoints,
   computeGroupStandings,
+  computeKnockoutCascade,
   computeLeaderboard,
   computeMatchPoints,
   computeThirdPlacePlacementPoints,
@@ -15,12 +16,14 @@ import {
   type FinalStandings,
   type GroupStanding,
   type GroupStandings,
+  type KnockoutMatchPrediction,
   type LeaderboardUser,
   type MatchPrediction,
   type MatchScore,
   type MatchStatus,
   type PredictedThirdPlaceAssignment,
   type ScoredPrediction,
+  type SlotAssignment,
   type Team,
   type ThirdPlacePick,
 } from "./bracket";
@@ -950,5 +953,200 @@ describe("computeLeaderboard", () => {
     const out = computeLeaderboard(users, preds);
     expect(out[0].exact_count).toBe(2);
     expect(out[0].outcome_count).toBe(0);
+  });
+});
+
+// ----------------------------------------------------------------------
+// computeKnockoutCascade
+// ----------------------------------------------------------------------
+
+function r32Assignment(
+  slot_label: string,
+  team_id: string | null,
+): SlotAssignment {
+  // The cascade ignores `source` — only slot_label + team_id matter.
+  return { slot_label, team_id, source: "group_winner" };
+}
+
+function ko(
+  round_id: KnockoutMatchPrediction["round_id"],
+  match_index: number,
+  home_slot_label: string,
+  away_slot_label: string,
+  predicted_winner_label: string | null,
+): KnockoutMatchPrediction {
+  return {
+    round_id,
+    match_index,
+    home_slot_label,
+    away_slot_label,
+    predicted_winner_label,
+  };
+}
+
+describe("computeKnockoutCascade", () => {
+  it("seeds R32 slot labels from input; downstream slots absent without predictions", () => {
+    const seed: SlotAssignment[] = [
+      r32Assignment("winner-A", "ARG"),
+      r32Assignment("runner-up-A", "BRA"),
+      r32Assignment("best-3rd-1", "TUN"),
+    ];
+    const out = computeKnockoutCascade(seed, []);
+    expect(out.get("winner-A")).toBe("ARG");
+    expect(out.get("runner-up-A")).toBe("BRA");
+    expect(out.get("best-3rd-1")).toBe("TUN");
+    expect(out.has("r32-match-1-winner")).toBe(false);
+    expect(out.has("r16-match-1-winner")).toBe(false);
+  });
+
+  it("R32 prediction populates the corresponding R32-match-N-winner slot", () => {
+    const seed: SlotAssignment[] = [
+      r32Assignment("winner-A", "ARG"),
+      r32Assignment("best-3rd-1", "TUN"),
+    ];
+    const out = computeKnockoutCascade(seed, [
+      ko("r32", 1, "winner-A", "best-3rd-1", "winner-A"),
+    ]);
+    expect(out.get("r32-match-1-winner")).toBe("ARG");
+  });
+
+  it("end-to-end cascade: predictions through Final fill every downstream slot", () => {
+    // Synthetic minimal cascade: only cover the chain that feeds Final
+    // match — R32-1, R32-2, R16-1, QF-1, SF-1, SF-2, Final, 3rd-place.
+    const seed: SlotAssignment[] = [
+      r32Assignment("winner-A", "ARG"),
+      r32Assignment("best-3rd-1", "TUN"),
+      r32Assignment("winner-C", "BRA"),
+      r32Assignment("runner-up-F", "FRA"),
+    ];
+    // R32-1: ARG vs TUN, ARG advances
+    // R32-2: BRA vs FRA, BRA advances
+    // R16-1: r32-1-winner (ARG) vs r32-2-winner (BRA), ARG advances
+    // QF-1: r16-1-winner (ARG) vs r16-2-winner (null) → outside-of-test, skip
+    // SF-1: synthetic — ARG vs (null), ARG advances
+    // Final: ARG vs (sf-2-winner null), ARG champion
+    // 3rd-place: sf-1-loser (null) vs sf-2-loser (null) — null vs null
+    const out = computeKnockoutCascade(seed, [
+      ko("r32", 1, "winner-A", "best-3rd-1", "winner-A"),
+      ko("r32", 2, "winner-C", "runner-up-F", "winner-C"),
+      ko(
+        "r16",
+        1,
+        "r32-match-1-winner",
+        "r32-match-2-winner",
+        "r32-match-1-winner",
+      ),
+      ko(
+        "sf",
+        1,
+        "qf-match-1-winner",
+        "qf-match-2-winner",
+        "qf-match-1-winner",
+      ),
+      ko(
+        "final",
+        1,
+        "sf-match-1-winner",
+        "sf-match-2-winner",
+        "sf-match-1-winner",
+      ),
+    ]);
+    expect(out.get("r32-match-1-winner")).toBe("ARG");
+    expect(out.get("r32-match-2-winner")).toBe("BRA");
+    expect(out.get("r16-match-1-winner")).toBe("ARG");
+    // QF-1's prediction not provided → r16-1 cascades up but qf-1-winner missing.
+    expect(out.has("qf-match-1-winner")).toBe(false);
+    // SF references qf-match-1-winner which is unresolved → SF picks null.
+    expect(out.get("sf-match-1-winner")).toBeNull();
+    // Final references sf-match-1-winner which is null → Final winner null too.
+    expect(out.get("r32-match-1-winner")).toBe("ARG"); // sanity
+  });
+
+  it("predicted-winner whose upstream is null cascades null downstream", () => {
+    // User predicted r16-1 winner is r32-match-1-winner, but they didn't
+    // predict R32-1. The R16 winner slot resolves to null.
+    const seed: SlotAssignment[] = [
+      r32Assignment("winner-A", "ARG"),
+      r32Assignment("best-3rd-1", "TUN"),
+    ];
+    const out = computeKnockoutCascade(seed, [
+      ko(
+        "r16",
+        1,
+        "r32-match-1-winner",
+        "r32-match-2-winner",
+        "r32-match-1-winner",
+      ),
+    ]);
+    expect(out.get("r16-match-1-winner")).toBeNull();
+  });
+
+  it("SF predictions populate both winner and loser slots", () => {
+    const seed: SlotAssignment[] = [];
+    // Both qf-match-1-winner and qf-match-2-winner resolve via prior
+    // cascade — synthesize them by seeding the cascade with their team
+    // ids via earlier rounds.
+    const preds: KnockoutMatchPrediction[] = [
+      // Synthetic r32 + r16 + qf populating qf-match-1-winner
+      ko("r32", 1, "x", "y", "x"),
+      ko("r16", 1, "r32-match-1-winner", "r32-match-2-winner", "r32-match-1-winner"),
+      ko("qf", 1, "r16-match-1-winner", "r16-match-2-winner", "r16-match-1-winner"),
+      ko("qf", 2, "r16-match-3-winner", "r16-match-4-winner", "r16-match-3-winner"),
+      // SF-1: qf-1-winner vs qf-2-winner, qf-1 advances
+      ko("sf", 1, "qf-match-1-winner", "qf-match-2-winner", "qf-match-1-winner"),
+    ];
+    const out = computeKnockoutCascade(
+      [r32Assignment("x", "ARG"), r32Assignment("y", "TUN")],
+      preds,
+    );
+    // r32-1 winner → ARG, propagates through r16-1 and qf-1.
+    expect(out.get("qf-match-1-winner")).toBe("ARG");
+    expect(out.get("sf-match-1-winner")).toBe("ARG");
+    // qf-2 had no upstream r32-3 predictions, so qf-match-2-winner is null
+    expect(out.get("qf-match-2-winner")).toBeNull();
+    // SF loser side = qf-match-2-winner (the side ARG didn't pick) = null
+    expect(out.get("sf-match-1-loser")).toBeNull();
+  });
+
+  it("SF loser slot picks the OPPOSITE side from the predicted winner", () => {
+    const seed: SlotAssignment[] = [
+      r32Assignment("winner-A", "ARG"),
+      r32Assignment("winner-C", "BRA"),
+    ];
+    // Cascade ARG via the home side and BRA via away of a single SF match
+    const preds: KnockoutMatchPrediction[] = [
+      ko("r32", 1, "winner-A", "x", "winner-A"),
+      ko("r32", 2, "winner-C", "y", "winner-C"),
+      ko("r16", 1, "r32-match-1-winner", "r32-match-2-winner", "r32-match-1-winner"),
+      ko("r16", 2, "anything", "anything-else", null), // skip
+      ko("qf", 1, "r16-match-1-winner", "r16-match-2-winner", "r16-match-1-winner"),
+      ko("qf", 2, "winner-C", "y", "winner-C"), // hack to populate qf-2-winner with BRA via fake home
+      ko("sf", 1, "qf-match-1-winner", "qf-match-2-winner", "qf-match-2-winner"),
+      // ↑ SF-1 picks qf-2-winner (BRA) as winner; loser = qf-1-winner (ARG)
+    ];
+    const out = computeKnockoutCascade(seed, preds);
+    expect(out.get("sf-match-1-winner")).toBe("BRA");
+    expect(out.get("sf-match-1-loser")).toBe("ARG");
+  });
+
+  it("Final and 3rd-place are terminal — no downstream writes", () => {
+    const seed: SlotAssignment[] = [];
+    const preds: KnockoutMatchPrediction[] = [
+      ko("final", 1, "sf-match-1-winner", "sf-match-2-winner", "sf-match-1-winner"),
+      ko(
+        "third_place",
+        1,
+        "sf-match-1-loser",
+        "sf-match-2-loser",
+        "sf-match-1-loser",
+      ),
+    ];
+    const out = computeKnockoutCascade(seed, preds);
+    // Neither writes any downstream label.
+    expect(out.has("final-match-1-winner")).toBe(false);
+    expect(out.has("third_place-match-1-winner")).toBe(false);
+    // The pure function still resolves what it can — both predictions
+    // reference upstream labels that aren't seeded → null lookup, no writes.
+    expect(out.size).toBe(0);
   });
 });

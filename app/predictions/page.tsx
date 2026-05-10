@@ -39,7 +39,9 @@ export default async function PredictionsPage() {
         rounds={workspace.rounds}
         groupTeams={workspace.groupTeams}
         groupMatches={workspace.groupMatches}
+        knockoutMatches={workspace.knockoutMatches}
         initialPredictions={workspace.predictions}
+        slotLabelById={workspace.slotLabelById}
       />
     </div>
   );

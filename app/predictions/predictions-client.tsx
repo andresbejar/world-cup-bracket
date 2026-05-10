@@ -9,8 +9,21 @@ import {
   type ReactNode,
 } from "react";
 import { MatchCard } from "./match-card";
+import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
+import {
+  computeGroupStandings,
+  computeKnockoutCascade,
+  GROUP_LETTERS,
+  populateR32Slots,
+  type GroupStandings,
+  type KnockoutMatchPrediction,
+  type KnockoutRoundId,
+  type MatchScore,
+  type Team,
+} from "@/lib/bracket";
 import type {
+  HydratedKnockoutMatch,
   HydratedMatch,
   HydratedPrediction,
   HydratedRound,
@@ -23,12 +36,16 @@ interface Props {
   rounds: HydratedRound[];
   groupTeams: HydratedTeam[];
   groupMatches: HydratedMatch[];
+  knockoutMatches: HydratedKnockoutMatch[];
   initialPredictions: HydratedPrediction[];
+  slotLabelById: Record<string, string>;
 }
 
-interface Score {
+interface PredictionState {
   home: number;
   away: number;
+  /** Knockout matches only: which slot id (home_slot_id or away_slot_id) advances. */
+  winner: string | null;
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -37,36 +54,35 @@ export function PredictionsClient({
   rounds,
   groupTeams,
   groupMatches,
+  knockoutMatches,
   initialPredictions,
+  slotLabelById,
 }: Props) {
-  const groupRounds = rounds.filter((r) => r.stage === "group");
-  const knockoutRounds = rounds.filter((r) => r.stage !== "group");
-
   const [activeRoundId, setActiveRoundId] = useState<string>(
-    groupRounds[0]?.id ?? rounds[0]?.id ?? "",
+    rounds.find((r) => r.stage === "group")?.id ?? rounds[0]?.id ?? "",
   );
 
-  // Single source of truth for all 72 group predictions, keyed by match_id.
-  const [predictions, setPredictions] = useState<Map<string, Score>>(() => {
-    const m = new Map<string, Score>();
-    for (const p of initialPredictions) {
-      m.set(p.match_id, {
-        home: p.predicted_home_score,
-        away: p.predicted_away_score,
-      });
-    }
-    return m;
-  });
+  // Single source of truth for every prediction (group + knockout), keyed by match_id.
+  const [predictions, setPredictions] = useState<Map<string, PredictionState>>(
+    () => {
+      const m = new Map<string, PredictionState>();
+      for (const p of initialPredictions) {
+        m.set(p.match_id, {
+          home: p.predicted_home_score,
+          away: p.predicted_away_score,
+          winner: p.predicted_winning_slot_id,
+        });
+      }
+      return m;
+    },
+  );
   const [saveStatus, setSaveStatus] = useState<Map<string, SaveStatus>>(
     new Map(),
   );
 
-  // One pending-save timer per match — a fast typist editing two scores
-  // back-to-back shouldn't fire the first save.
   const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
-
   useEffect(() => {
     return () => {
       for (const t of pendingTimers.current.values()) clearTimeout(t);
@@ -75,7 +91,7 @@ export function PredictionsClient({
   }, []);
 
   const flushSave = useCallback(
-    async (matchId: string, score: Score) => {
+    async (matchId: string, state: PredictionState) => {
       setSaveStatus((s) => new Map(s).set(matchId, "saving"));
       try {
         const res = await fetch("/api/predictions", {
@@ -83,8 +99,9 @@ export function PredictionsClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             match_id: matchId,
-            predicted_home_score: score.home,
-            predicted_away_score: score.away,
+            predicted_home_score: state.home,
+            predicted_away_score: state.away,
+            predicted_winning_slot_id: state.winner,
           }),
         });
         if (!res.ok) throw new Error(`save failed ${res.status}`);
@@ -97,17 +114,17 @@ export function PredictionsClient({
     [],
   );
 
-  const handleScoreChange = useCallback(
-    (matchId: string, home: number, away: number) => {
+  const writePrediction = useCallback(
+    (matchId: string, next: PredictionState) => {
       setPredictions((prev) => {
-        const next = new Map(prev);
-        next.set(matchId, { home, away });
-        return next;
+        const m = new Map(prev);
+        m.set(matchId, next);
+        return m;
       });
       const existing = pendingTimers.current.get(matchId);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(() => {
-        flushSave(matchId, { home, away });
+        flushSave(matchId, next);
         pendingTimers.current.delete(matchId);
       }, SAVE_DEBOUNCE_MS);
       pendingTimers.current.set(matchId, timer);
@@ -115,7 +132,80 @@ export function PredictionsClient({
     [flushSave],
   );
 
-  const matchesByRound = useMemo(() => {
+  // Group cascade — computeGroupStandings × 12.
+  const standingsByGroup = useMemo<GroupStandings[]>(() => {
+    const matchById = new Map(groupMatches.map((m) => [m.id, m]));
+    const scoresByGroup = new Map<string, MatchScore[]>();
+    for (const letter of GROUP_LETTERS) scoresByGroup.set(letter, []);
+    for (const [matchId, state] of predictions) {
+      const m = matchById.get(matchId);
+      if (!m) continue;
+      const bucket = scoresByGroup.get(m.home.group_letter);
+      if (!bucket) continue;
+      bucket.push({
+        home_team_id: m.home.id,
+        away_team_id: m.away.id,
+        home_score: state.home,
+        away_score: state.away,
+      });
+    }
+    const teamsByGroup = new Map<string, Team[]>();
+    for (const letter of GROUP_LETTERS) teamsByGroup.set(letter, []);
+    for (const t of groupTeams) {
+      teamsByGroup.get(t.group_letter)?.push({
+        id: t.id,
+        group_letter: t.group_letter,
+      });
+    }
+    const result: GroupStandings[] = [];
+    for (const letter of GROUP_LETTERS) {
+      const teams = teamsByGroup.get(letter) ?? [];
+      const scores = scoresByGroup.get(letter) ?? [];
+      result.push({
+        group_letter: letter,
+        standings: computeGroupStandings(scores, teams),
+      });
+    }
+    return result;
+  }, [groupTeams, groupMatches, predictions]);
+
+  // R32 → Final cascade. Best-3rd picks aren't wired yet (APT-22) so the
+  // 8 best-3rd slots stay null; downstream R32 matches that reference them
+  // will see one side as null until APT-22 ships.
+  const slotMap = useMemo<Map<string, string | null>>(() => {
+    const r32Slots = populateR32Slots(standingsByGroup, []);
+    const knockoutPreds: KnockoutMatchPrediction[] = [];
+    for (const m of knockoutMatches) {
+      const state = predictions.get(m.id);
+      const winner_label =
+        state?.winner != null ? slotLabelById[state.winner] ?? null : null;
+      knockoutPreds.push({
+        round_id: m.round_id as KnockoutRoundId,
+        match_index: m.match_index,
+        home_slot_label: m.home_slot_label,
+        away_slot_label: m.away_slot_label,
+        predicted_winner_label: winner_label,
+      });
+    }
+    return computeKnockoutCascade(r32Slots, knockoutPreds);
+  }, [standingsByGroup, knockoutMatches, predictions, slotLabelById]);
+
+  const teamCodeById = useMemo(
+    () => new Map(groupTeams.map((t) => [t.id, t.code])),
+    [groupTeams],
+  );
+
+  // Resolve a slot_label → team code through the cascade + team registry.
+  const teamCodeAtLabel = useCallback(
+    (label: string): string | null => {
+      const teamId = slotMap.get(label);
+      if (!teamId) return null;
+      return teamCodeById.get(teamId) ?? teamId;
+    },
+    [slotMap, teamCodeById],
+  );
+
+  const groupMatchesByRound = useMemo(() => {
     const m = new Map<string, HydratedMatch[]>();
     for (const match of groupMatches) {
       const arr = m.get(match.round_id) ?? [];
@@ -125,12 +215,34 @@ export function PredictionsClient({
     return m;
   }, [groupMatches]);
 
-  const activeMatches = matchesByRound.get(activeRoundId) ?? [];
+  const knockoutMatchesByRound = useMemo(() => {
+    const m = new Map<string, HydratedKnockoutMatch[]>();
+    for (const match of knockoutMatches) {
+      const arr = m.get(match.round_id) ?? [];
+      arr.push(match);
+      m.set(match.round_id, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => a.match_index - b.match_index);
+    }
+    return m;
+  }, [knockoutMatches]);
+
   const activeRound = rounds.find((r) => r.id === activeRoundId);
   const isKnockoutRound = activeRound?.stage !== "group";
-  const filledInActiveRound = activeMatches.filter((m) =>
-    predictions.has(m.id),
-  ).length;
+
+  const activeGroupMatches = groupMatchesByRound.get(activeRoundId) ?? [];
+  const activeKnockoutMatches = knockoutMatchesByRound.get(activeRoundId) ?? [];
+
+  const filledInActiveRound = isKnockoutRound
+    ? activeKnockoutMatches.filter((m) => {
+        const s = predictions.get(m.id);
+        return s != null && s.winner != null;
+      }).length
+    : activeGroupMatches.filter((m) => predictions.has(m.id)).length;
+  const totalInActiveRound = isKnockoutRound
+    ? activeKnockoutMatches.length
+    : activeGroupMatches.length;
 
   return (
     <div className="min-h-[100svh]">
@@ -146,22 +258,42 @@ export function PredictionsClient({
             <SectionHeading
               eyebrow={
                 activeRound
-                  ? `${activeRound.stage === "group" ? "GROUP STAGE" : activeRound.stage.toUpperCase()} · ACTIVE ROUND`
+                  ? `${activeRound.stage === "group" ? "GROUP STAGE" : activeRound.stage.toUpperCase().replace("_", " ")} · ACTIVE ROUND`
                   : "ACTIVE ROUND"
               }
               title={activeRound?.name ?? "Round"}
-              meta={meta(activeRound, filledInActiveRound, activeMatches.length)}
+              meta={meta(activeRound, filledInActiveRound, totalInActiveRound)}
             />
 
             {isKnockoutRound ? (
-              <p className="mt-6 rounded-md border border-border bg-surface p-6 font-mono text-xs uppercase tracking-[0.06em] text-text-muted">
-                Knockout-round prediction UI ships in APT-20. Pick your group
-                scores first — they cascade into this round&rsquo;s slots in
-                the bracket on the right.
-              </p>
+              <div className="mt-6 space-y-2">
+                {activeKnockoutMatches.map((match) => {
+                  const state = predictions.get(match.id);
+                  return (
+                    <KnockoutCard
+                      key={match.id}
+                      match={match}
+                      homeTeam={teamCodeAtLabel(match.home_slot_label)}
+                      awayTeam={teamCodeAtLabel(match.away_slot_label)}
+                      homeScore={state?.home ?? null}
+                      awayScore={state?.away ?? null}
+                      predictedWinnerSlotId={state?.winner ?? null}
+                      saveStatus={saveStatus.get(match.id) ?? "idle"}
+                      onChange={(home, away, winner) =>
+                        writePrediction(match.id, { home, away, winner })
+                      }
+                    />
+                  );
+                })}
+                {activeKnockoutMatches.length === 0 ? (
+                  <p className="rounded-md border border-border bg-surface p-6 font-mono text-xs uppercase tracking-[0.06em] text-text-dim">
+                    No matches in this round yet.
+                  </p>
+                ) : null}
+              </div>
             ) : (
               <div className="mt-6 space-y-3">
-                {groupedByGroup(activeMatches).map(({ group, items }) => (
+                {groupedByGroup(activeGroupMatches).map(({ group, items }) => (
                   <div key={group}>
                     <p className="mb-2 mt-4 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted first:mt-0">
                       Group {group}
@@ -178,7 +310,11 @@ export function PredictionsClient({
                             awayScore={score?.away ?? null}
                             saveStatus={saveStatus.get(match.id) ?? "idle"}
                             onChange={(h, a) =>
-                              handleScoreChange(match.id, h, a)
+                              writePrediction(match.id, {
+                                home: h,
+                                away: a,
+                                winner: null,
+                              })
                             }
                           />
                         );
@@ -195,9 +331,9 @@ export function PredictionsClient({
             className="xl:sticky xl:top-8 xl:self-start"
           >
             <BracketSidebar
-              groupTeams={groupTeams}
-              groupMatches={groupMatches}
-              predictions={predictions}
+              standingsByGroup={standingsByGroup}
+              slotMap={slotMap}
+              teamCodeById={teamCodeById}
               activeRound={activeRound}
             />
           </aside>
@@ -306,16 +442,15 @@ function meta(
 ): ReactNode {
   if (!round) return null;
   const countdown = formatCountdown(round.deadline_at);
-  if (round.stage !== "group") return countdown;
-  // Group rounds get the deadline (urgent) on top + picked count
-  // (supporting) underneath in dimmer text.
+  const counter =
+    total > 0
+      ? `${filled.toString().padStart(2, "0")}/${total.toString().padStart(2, "0")} PICKED`
+      : null;
+  if (!counter) return countdown;
   return (
     <>
       <span className="block">{countdown}</span>
-      <span className="mt-1 block text-text-dim">
-        {filled.toString().padStart(2, "0")}/
-        {total.toString().padStart(2, "0")} PICKED
-      </span>
+      <span className="mt-1 block text-text-dim">{counter}</span>
     </>
   );
 }

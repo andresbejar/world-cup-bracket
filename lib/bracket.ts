@@ -349,6 +349,107 @@ export function populateR32Slots(
 }
 
 // ======================================================================
+// Knockout cascade — resolve every downstream slot from upstream picks
+// ======================================================================
+
+export type KnockoutRoundId =
+  | "r32"
+  | "r16"
+  | "qf"
+  | "sf"
+  | "final"
+  | "third_place";
+
+export interface KnockoutMatchPrediction {
+  round_id: KnockoutRoundId;
+  /** 1-based, used to name the downstream slot ("r32-match-3-winner"). */
+  match_index: number;
+  home_slot_label: string;
+  away_slot_label: string;
+  /**
+   * Slot_label of the side the user picked to advance. Equals either
+   * home_slot_label or away_slot_label, or null if no prediction yet.
+   */
+  predicted_winner_label: string | null;
+}
+
+/**
+ * Walks the knockout tree top-down, filling each round's downstream
+ * slot labels (`r32-match-N-winner`, `r16-match-N-winner`, etc.) from
+ * the user's predicted winner of each match. SF also populates the
+ * `-loser` labels that feed the third-place match. Final and 3rd-place
+ * are terminal — the function reads their predictions but doesn't
+ * write anything downstream.
+ *
+ * Returns a single Map<slot_label, team_id | null>. R32 input labels
+ * (winner-A, runner-up-C, best-3rd-3, ...) are seeded from the
+ * caller-provided `r32Slots`. Downstream labels are absent until a
+ * prediction populates them; they resolve to undefined → caller treats
+ * as null. A prediction whose `predicted_winner_label` references an
+ * unresolved upstream slot writes null (cascade absorbs the gap).
+ *
+ * Pure function. Caller composes slot_id → slot_label resolution.
+ */
+export function computeKnockoutCascade(
+  r32Slots: readonly SlotAssignment[],
+  predictions: readonly KnockoutMatchPrediction[],
+): Map<string, string | null> {
+  const result = new Map<string, string | null>();
+
+  for (const s of r32Slots) {
+    result.set(s.slot_label, s.team_id);
+  }
+
+  const ROUND_ORDER: KnockoutRoundId[] = [
+    "r32",
+    "r16",
+    "qf",
+    "sf",
+    "final",
+    "third_place",
+  ];
+
+  for (const round of ROUND_ORDER) {
+    for (const m of predictions) {
+      if (m.round_id !== round) continue;
+      if (m.predicted_winner_label == null) continue;
+      const winner = result.get(m.predicted_winner_label) ?? null;
+      const downstream = downstreamWinnerLabel(round, m.match_index);
+      if (downstream != null) result.set(downstream, winner);
+      if (round === "sf") {
+        const loserLabel =
+          m.predicted_winner_label === m.home_slot_label
+            ? m.away_slot_label
+            : m.home_slot_label;
+        const loser = result.get(loserLabel) ?? null;
+        result.set(`sf-match-${m.match_index}-loser`, loser);
+      }
+    }
+  }
+
+  return result;
+}
+
+function downstreamWinnerLabel(
+  round: KnockoutRoundId,
+  match_index: number,
+): string | null {
+  switch (round) {
+    case "r32":
+      return `r32-match-${match_index}-winner`;
+    case "r16":
+      return `r16-match-${match_index}-winner`;
+    case "qf":
+      return `qf-match-${match_index}-winner`;
+    case "sf":
+      return `sf-match-${match_index}-winner`;
+    case "final":
+    case "third_place":
+      return null;
+  }
+}
+
+// ======================================================================
 // Per-match scoring
 // ======================================================================
 
