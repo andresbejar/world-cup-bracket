@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { MatchCard } from "./match-card";
 import { BracketSidebar } from "./bracket-sidebar";
 import type {
@@ -257,7 +264,7 @@ function SectionHeading({
 }: {
   eyebrow: string;
   title: string;
-  meta: string;
+  meta: ReactNode;
 }) {
   return (
     <div className="flex items-end justify-between gap-4">
@@ -272,9 +279,9 @@ function SectionHeading({
           {title}
         </h2>
       </div>
-      <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted whitespace-nowrap">
+      <div className="whitespace-nowrap text-right font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted">
         {meta}
-      </p>
+      </div>
     </div>
   );
 }
@@ -296,12 +303,21 @@ function meta(
   round: HydratedRound | undefined,
   filled: number,
   total: number,
-): string {
-  if (!round) return "";
-  if (round.stage === "group") {
-    return `${filled.toString().padStart(2, "0")}/${total.toString().padStart(2, "0")} PICKED`;
-  }
-  return formatCountdown(round.deadline_at);
+): ReactNode {
+  if (!round) return null;
+  const countdown = formatCountdown(round.deadline_at);
+  if (round.stage !== "group") return countdown;
+  // Group rounds get the deadline (urgent) on top + picked count
+  // (supporting) underneath in dimmer text.
+  return (
+    <>
+      <span className="block">{countdown}</span>
+      <span className="mt-1 block text-text-dim">
+        {filled.toString().padStart(2, "0")}/
+        {total.toString().padStart(2, "0")} PICKED
+      </span>
+    </>
+  );
 }
 
 function formatCountdown(iso: string): string {
