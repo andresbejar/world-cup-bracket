@@ -579,3 +579,94 @@ export function computeThirdPlacePlacementPoints(
   }
   return total;
 }
+
+// ======================================================================
+// Leaderboard aggregation
+// ======================================================================
+
+export interface LeaderboardUser {
+  id: string;
+  username: string | null;
+  profile_pic: string | null;
+  /**
+   * Pre-materialized total points (kept fresh by the scoring engine —
+   * APT-27, APT-29). The leaderboard function trusts this value and
+   * does not recompute from raw rows.
+   */
+  total_points: number;
+  /** ISO 8601 timestamp. Used as the final tiebreaker (earliest first). */
+  created_at: string;
+}
+
+export interface ScoredPrediction {
+  user_id: string;
+  /** Output of computeMatchPoints. Null = match not finished yet. */
+  points_awarded: number | null;
+}
+
+export interface LeaderboardEntry {
+  user_id: string;
+  username: string | null;
+  profile_pic: string | null;
+  total_points: number;
+  /** Predictions with a 3-point exact-score result. */
+  exact_count: number;
+  /** Predictions with a 1-point outcome-only result. */
+  outcome_count: number;
+  rank: number;
+}
+
+/**
+ * Build the ranked leaderboard.
+ *
+ * Tiebreaker chain (design doc § Open Question 2, confirmed):
+ *   1. total_points (descending)
+ *   2. number of 3-point exact-score predictions (descending)
+ *   3. number of 1-point outcome-only predictions (descending)
+ *   4. registration time (ascending — earliest signup wins)
+ *
+ * Strict ordinal ranking: distinct ranks even when stats tie, because
+ * created_at breaks any final tie deterministically.
+ */
+export function computeLeaderboard(
+  users: readonly LeaderboardUser[],
+  predictions: readonly ScoredPrediction[],
+): LeaderboardEntry[] {
+  // Aggregate per-user exact / outcome counts from the scored predictions.
+  const counts = new Map<string, { exact: number; outcome: number }>();
+  for (const u of users) counts.set(u.id, { exact: 0, outcome: 0 });
+  for (const p of predictions) {
+    const bucket = counts.get(p.user_id);
+    if (!bucket) continue; // prediction for an unknown user — defensive drop
+    if (p.points_awarded === 3) bucket.exact += 1;
+    else if (p.points_awarded === 1) bucket.outcome += 1;
+  }
+
+  const entries: LeaderboardEntry[] = users.map((u) => {
+    const c = counts.get(u.id)!;
+    return {
+      user_id: u.id,
+      username: u.username,
+      profile_pic: u.profile_pic,
+      total_points: u.total_points,
+      exact_count: c.exact,
+      outcome_count: c.outcome,
+      rank: 0,
+    };
+  });
+
+  entries.sort((a, b) => {
+    if (a.total_points !== b.total_points) return b.total_points - a.total_points;
+    if (a.exact_count !== b.exact_count) return b.exact_count - a.exact_count;
+    if (a.outcome_count !== b.outcome_count) {
+      return b.outcome_count - a.outcome_count;
+    }
+    // Final fallback: earliest registration wins.
+    const ua = users.find((u) => u.id === a.user_id)!;
+    const ub = users.find((u) => u.id === b.user_id)!;
+    return ua.created_at.localeCompare(ub.created_at);
+  });
+
+  for (let i = 0; i < entries.length; i++) entries[i].rank = i + 1;
+  return entries;
+}

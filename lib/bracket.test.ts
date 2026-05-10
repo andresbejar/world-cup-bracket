@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeFinalistPoints,
   computeGroupStandings,
+  computeLeaderboard,
   computeMatchPoints,
   computeThirdPlacePlacementPoints,
   populateR32Slots,
@@ -14,10 +15,12 @@ import {
   type FinalStandings,
   type GroupStanding,
   type GroupStandings,
+  type LeaderboardUser,
   type MatchPrediction,
   type MatchScore,
   type MatchStatus,
   type PredictedThirdPlaceAssignment,
+  type ScoredPrediction,
   type Team,
   type ThirdPlacePick,
 } from "./bracket";
@@ -803,5 +806,149 @@ describe("computeThirdPlacePlacementPoints", () => {
     expect(
       computeThirdPlacePlacementPoints(thirdPlacePicks(real), slots),
     ).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------
+// computeLeaderboard
+// ----------------------------------------------------------------------
+
+function user(
+  id: string,
+  total_points: number,
+  created_at = "2026-05-15T10:00:00Z",
+): LeaderboardUser {
+  return {
+    id,
+    username: id.toLowerCase(),
+    profile_pic: null,
+    total_points,
+    created_at,
+  };
+}
+
+function exactPred(user_id: string, count: number): ScoredPrediction[] {
+  return Array.from({ length: count }, () => ({
+    user_id,
+    points_awarded: 3,
+  }));
+}
+function outcomePred(user_id: string, count: number): ScoredPrediction[] {
+  return Array.from({ length: count }, () => ({
+    user_id,
+    points_awarded: 1,
+  }));
+}
+function wrongPred(user_id: string, count: number): ScoredPrediction[] {
+  return Array.from({ length: count }, () => ({
+    user_id,
+    points_awarded: 0,
+  }));
+}
+
+describe("computeLeaderboard", () => {
+  it("happy path: 10 users with mixed scores → ranked correctly by total_points", () => {
+    const users: LeaderboardUser[] = [];
+    const preds: ScoredPrediction[] = [];
+    // Distinct totals from 90 down to 0 in steps of 10.
+    for (let i = 0; i < 10; i++) {
+      const id = `u${i}`;
+      users.push(user(id, (9 - i) * 10));
+      preds.push(...exactPred(id, 9 - i));
+    }
+    // Shuffle the input order to make sure sort is doing the work.
+    users.sort(() => 0.1 - Math.random());
+
+    const out = computeLeaderboard(users, preds);
+    expect(out).toHaveLength(10);
+    expect(out.map((e) => e.user_id)).toEqual([
+      "u0", "u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9",
+    ]);
+    expect(out.map((e) => e.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(out[0].total_points).toBe(90);
+    expect(out[0].exact_count).toBe(9);
+    expect(out.at(-1)?.total_points).toBe(0);
+  });
+
+  it("full tiebreaker chain: total → exact → outcome → registration time", () => {
+    // Four users tied on total_points = 30.
+    //   alice: 10 exact (30 pts via predictions, materialized)
+    //   bob:   9 exact + 3 outcome
+    //   carol: 9 exact + 3 outcome (later signup)
+    //   dave:  9 exact + 2 outcome + 4 wrong → tied total but lower outcome_count
+    // Plus eve at 25 to verify higher pts ranks above the cluster.
+    const users: LeaderboardUser[] = [
+      user("eve",   25, "2026-05-12T00:00:00Z"),
+      user("alice", 30, "2026-05-15T10:00:00Z"),
+      user("bob",   30, "2026-05-15T11:00:00Z"),
+      user("carol", 30, "2026-05-15T11:00:01Z"), // 1 second later than bob
+      user("dave",  30, "2026-05-14T00:00:00Z"), // earliest
+    ];
+    const preds: ScoredPrediction[] = [
+      ...exactPred("alice", 10),
+      ...exactPred("bob", 9),
+      ...outcomePred("bob", 3),
+      ...exactPred("carol", 9),
+      ...outcomePred("carol", 3),
+      ...exactPred("dave", 9),
+      ...outcomePred("dave", 2),
+      ...wrongPred("dave", 4),
+      ...exactPred("eve", 8),
+    ];
+
+    const out = computeLeaderboard(users, preds);
+    // Within the 30-pt tie:
+    //   alice: 10 exact, 0 outcome     → rank 1 (most exact)
+    //   bob:   9 exact, 3 outcome      → rank 2 (earlier signup than carol)
+    //   carol: 9 exact, 3 outcome      → rank 3
+    //   dave:  9 exact, 2 outcome      → rank 4 (lowest outcome_count)
+    // Then eve at 25 → rank 5.
+    expect(out.map((e) => e.user_id)).toEqual([
+      "alice", "bob", "carol", "dave", "eve",
+    ]);
+    expect(out.map((e) => e.rank)).toEqual([1, 2, 3, 4, 5]);
+    expect(out[0].exact_count).toBe(10);
+    expect(out[1].exact_count).toBe(9);
+    expect(out[1].outcome_count).toBe(3);
+    expect(out[3].outcome_count).toBe(2);
+  });
+
+  it("all-zeros pre-tournament → ranked by registration order (earliest first)", () => {
+    const users: LeaderboardUser[] = [
+      user("zelda",   0, "2026-05-10T12:00:00Z"),
+      user("alice",   0, "2026-05-10T08:00:00Z"),
+      user("bob",     0, "2026-05-10T10:00:00Z"),
+    ];
+    const out = computeLeaderboard(users, []);
+    expect(out.map((e) => e.user_id)).toEqual(["alice", "bob", "zelda"]);
+    expect(out.every((e) => e.total_points === 0)).toBe(true);
+    expect(out.every((e) => e.exact_count === 0)).toBe(true);
+    expect(out.every((e) => e.outcome_count === 0)).toBe(true);
+    expect(out.map((e) => e.rank)).toEqual([1, 2, 3]);
+  });
+
+  it("predictions for unknown users are dropped (defensive)", () => {
+    // A stale prediction whose user got deleted shouldn't crash or
+    // poison anyone else's stats.
+    const users = [user("alice", 10, "2026-05-15T10:00:00Z")];
+    const preds: ScoredPrediction[] = [
+      ...exactPred("alice", 3),
+      ...exactPred("ghost", 99), // unknown user_id
+    ];
+    const out = computeLeaderboard(users, preds);
+    expect(out).toHaveLength(1);
+    expect(out[0].exact_count).toBe(3);
+  });
+
+  it("predictions with null points_awarded are ignored (not yet scored)", () => {
+    const users = [user("alice", 6, "2026-05-15T10:00:00Z")];
+    const preds: ScoredPrediction[] = [
+      ...exactPred("alice", 2),
+      { user_id: "alice", points_awarded: null },
+      { user_id: "alice", points_awarded: null },
+    ];
+    const out = computeLeaderboard(users, preds);
+    expect(out[0].exact_count).toBe(2);
+    expect(out[0].outcome_count).toBe(0);
   });
 });
