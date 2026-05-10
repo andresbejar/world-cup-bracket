@@ -134,7 +134,7 @@ export function PredictionsClient({
           onChange={setActiveRoundId}
         />
 
-        <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-[60fr_40fr] md:gap-12">
+        <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[60fr_40fr] xl:gap-12">
           <section aria-label="Active round predictions">
             <SectionHeading
               eyebrow={
@@ -185,7 +185,7 @@ export function PredictionsClient({
 
           <aside
             aria-label="Bracket tree"
-            className="md:sticky md:top-8 md:self-start"
+            className="xl:sticky xl:top-8 xl:self-start"
           >
             <BracketTreeSidebar
               groupTeams={groupTeams}
