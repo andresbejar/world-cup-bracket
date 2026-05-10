@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:build": "tsx scripts/build-seed.ts",
+    "seed:apply": "tsx scripts/apply-seed.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
