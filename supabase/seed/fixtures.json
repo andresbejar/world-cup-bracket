@@ -1,0 +1,1962 @@
+{
+  "generated_at": "2026-05-10T04:57:32.520Z",
+  "teams": [
+    {
+      "id": "BEL",
+      "name": "Belgium",
+      "code": "BEL",
+      "flag_url": "https://media.api-sports.io/football/teams/1.png",
+      "group_letter": "G",
+      "apifootball_team_id": 1
+    },
+    {
+      "id": "FRA",
+      "name": "France",
+      "code": "FRA",
+      "flag_url": "https://media.api-sports.io/football/teams/2.png",
+      "group_letter": "I",
+      "apifootball_team_id": 2
+    },
+    {
+      "id": "CRO",
+      "name": "Croatia",
+      "code": "CRO",
+      "flag_url": "https://media.api-sports.io/football/teams/3.png",
+      "group_letter": "L",
+      "apifootball_team_id": 3
+    },
+    {
+      "id": "SWE",
+      "name": "Sweden",
+      "code": "SWE",
+      "flag_url": "https://media.api-sports.io/football/teams/5.png",
+      "group_letter": "F",
+      "apifootball_team_id": 5
+    },
+    {
+      "id": "BRA",
+      "name": "Brazil",
+      "code": "BRA",
+      "flag_url": "https://media.api-sports.io/football/teams/6.png",
+      "group_letter": "C",
+      "apifootball_team_id": 6
+    },
+    {
+      "id": "URU",
+      "name": "Uruguay",
+      "code": "URU",
+      "flag_url": "https://media.api-sports.io/football/teams/7.png",
+      "group_letter": "H",
+      "apifootball_team_id": 7
+    },
+    {
+      "id": "COL",
+      "name": "Colombia",
+      "code": "COL",
+      "flag_url": "https://media.api-sports.io/football/teams/8.png",
+      "group_letter": "K",
+      "apifootball_team_id": 8
+    },
+    {
+      "id": "ESP",
+      "name": "Spain",
+      "code": "ESP",
+      "flag_url": "https://media.api-sports.io/football/teams/9.png",
+      "group_letter": "H",
+      "apifootball_team_id": 9
+    },
+    {
+      "id": "ENG",
+      "name": "England",
+      "code": "ENG",
+      "flag_url": "https://media.api-sports.io/football/teams/10.png",
+      "group_letter": "L",
+      "apifootball_team_id": 10
+    },
+    {
+      "id": "PAN",
+      "name": "Panama",
+      "code": "PAN",
+      "flag_url": "https://media.api-sports.io/football/teams/11.png",
+      "group_letter": "L",
+      "apifootball_team_id": 11
+    },
+    {
+      "id": "JPN",
+      "name": "Japan",
+      "code": "JPN",
+      "flag_url": "https://media.api-sports.io/football/teams/12.png",
+      "group_letter": "F",
+      "apifootball_team_id": 12
+    },
+    {
+      "id": "SEN",
+      "name": "Senegal",
+      "code": "SEN",
+      "flag_url": "https://media.api-sports.io/football/teams/13.png",
+      "group_letter": "I",
+      "apifootball_team_id": 13
+    },
+    {
+      "id": "SUI",
+      "name": "Switzerland",
+      "code": "SUI",
+      "flag_url": "https://media.api-sports.io/football/teams/15.png",
+      "group_letter": "B",
+      "apifootball_team_id": 15
+    },
+    {
+      "id": "MEX",
+      "name": "Mexico",
+      "code": "MEX",
+      "flag_url": "https://media.api-sports.io/football/teams/16.png",
+      "group_letter": "A",
+      "apifootball_team_id": 16
+    },
+    {
+      "id": "KOR",
+      "name": "South Korea",
+      "code": "KOR",
+      "flag_url": "https://media.api-sports.io/football/teams/17.png",
+      "group_letter": "A",
+      "apifootball_team_id": 17
+    },
+    {
+      "id": "AUS",
+      "name": "Australia",
+      "code": "AUS",
+      "flag_url": "https://media.api-sports.io/football/teams/20.png",
+      "group_letter": "D",
+      "apifootball_team_id": 20
+    },
+    {
+      "id": "IRN",
+      "name": "Iran",
+      "code": "IRN",
+      "flag_url": "https://media.api-sports.io/football/teams/22.png",
+      "group_letter": "G",
+      "apifootball_team_id": 22
+    },
+    {
+      "id": "KSA",
+      "name": "Saudi Arabia",
+      "code": "KSA",
+      "flag_url": "https://media.api-sports.io/football/teams/23.png",
+      "group_letter": "H",
+      "apifootball_team_id": 23
+    },
+    {
+      "id": "GER",
+      "name": "Germany",
+      "code": "GER",
+      "flag_url": "https://media.api-sports.io/football/teams/25.png",
+      "group_letter": "E",
+      "apifootball_team_id": 25
+    },
+    {
+      "id": "ARG",
+      "name": "Argentina",
+      "code": "ARG",
+      "flag_url": "https://media.api-sports.io/football/teams/26.png",
+      "group_letter": "J",
+      "apifootball_team_id": 26
+    },
+    {
+      "id": "POR",
+      "name": "Portugal",
+      "code": "POR",
+      "flag_url": "https://media.api-sports.io/football/teams/27.png",
+      "group_letter": "K",
+      "apifootball_team_id": 27
+    },
+    {
+      "id": "TUN",
+      "name": "Tunisia",
+      "code": "TUN",
+      "flag_url": "https://media.api-sports.io/football/teams/28.png",
+      "group_letter": "F",
+      "apifootball_team_id": 28
+    },
+    {
+      "id": "MAR",
+      "name": "Morocco",
+      "code": "MAR",
+      "flag_url": "https://media.api-sports.io/football/teams/31.png",
+      "group_letter": "C",
+      "apifootball_team_id": 31
+    },
+    {
+      "id": "EGY",
+      "name": "Egypt",
+      "code": "EGY",
+      "flag_url": "https://media.api-sports.io/football/teams/32.png",
+      "group_letter": "G",
+      "apifootball_team_id": 32
+    },
+    {
+      "id": "CZE",
+      "name": "Czechia",
+      "code": "CZE",
+      "flag_url": "https://media.api-sports.io/football/teams/770.png",
+      "group_letter": "A",
+      "apifootball_team_id": 770
+    },
+    {
+      "id": "AUT",
+      "name": "Austria",
+      "code": "AUT",
+      "flag_url": "https://media.api-sports.io/football/teams/775.png",
+      "group_letter": "J",
+      "apifootball_team_id": 775
+    },
+    {
+      "id": "TUR",
+      "name": "Türkiye",
+      "code": "TUR",
+      "flag_url": "https://media.api-sports.io/football/teams/777.png",
+      "group_letter": "D",
+      "apifootball_team_id": 777
+    },
+    {
+      "id": "NOR",
+      "name": "Norway",
+      "code": "NOR",
+      "flag_url": "https://media.api-sports.io/football/teams/1090.png",
+      "group_letter": "I",
+      "apifootball_team_id": 1090
+    },
+    {
+      "id": "SCO",
+      "name": "Scotland",
+      "code": "SCO",
+      "flag_url": "https://media.api-sports.io/football/teams/1108.png",
+      "group_letter": "C",
+      "apifootball_team_id": 1108
+    },
+    {
+      "id": "BIH",
+      "name": "Bosnia & Herzegovina",
+      "code": "BIH",
+      "flag_url": "https://media.api-sports.io/football/teams/1113.png",
+      "group_letter": "B",
+      "apifootball_team_id": 1113
+    },
+    {
+      "id": "NED",
+      "name": "Netherlands",
+      "code": "NED",
+      "flag_url": "https://media.api-sports.io/football/teams/1118.png",
+      "group_letter": "F",
+      "apifootball_team_id": 1118
+    },
+    {
+      "id": "CIV",
+      "name": "Ivory Coast",
+      "code": "CIV",
+      "flag_url": "https://media.api-sports.io/football/teams/1501.png",
+      "group_letter": "E",
+      "apifootball_team_id": 1501
+    },
+    {
+      "id": "GHA",
+      "name": "Ghana",
+      "code": "GHA",
+      "flag_url": "https://media.api-sports.io/football/teams/1504.png",
+      "group_letter": "L",
+      "apifootball_team_id": 1504
+    },
+    {
+      "id": "COD",
+      "name": "DR Congo",
+      "code": "COD",
+      "flag_url": "https://media.api-sports.io/football/teams/1508.png",
+      "group_letter": "K",
+      "apifootball_team_id": 1508
+    },
+    {
+      "id": "RSA",
+      "name": "South Africa",
+      "code": "RSA",
+      "flag_url": "https://media.api-sports.io/football/teams/1531.png",
+      "group_letter": "A",
+      "apifootball_team_id": 1531
+    },
+    {
+      "id": "ALG",
+      "name": "Algeria",
+      "code": "ALG",
+      "flag_url": "https://media.api-sports.io/football/teams/1532.png",
+      "group_letter": "J",
+      "apifootball_team_id": 1532
+    },
+    {
+      "id": "CPV",
+      "name": "Cape Verde",
+      "code": "CPV",
+      "flag_url": "https://media.api-sports.io/football/teams/1533.png",
+      "group_letter": "H",
+      "apifootball_team_id": 1533
+    },
+    {
+      "id": "JOR",
+      "name": "Jordan",
+      "code": "JOR",
+      "flag_url": "https://media.api-sports.io/football/teams/1548.png",
+      "group_letter": "J",
+      "apifootball_team_id": 1548
+    },
+    {
+      "id": "IRQ",
+      "name": "Iraq",
+      "code": "IRQ",
+      "flag_url": "https://media.api-sports.io/football/teams/1567.png",
+      "group_letter": "I",
+      "apifootball_team_id": 1567
+    },
+    {
+      "id": "UZB",
+      "name": "Uzbekistan",
+      "code": "UZB",
+      "flag_url": "https://media.api-sports.io/football/teams/1568.png",
+      "group_letter": "K",
+      "apifootball_team_id": 1568
+    },
+    {
+      "id": "QAT",
+      "name": "Qatar",
+      "code": "QAT",
+      "flag_url": "https://media.api-sports.io/football/teams/1569.png",
+      "group_letter": "B",
+      "apifootball_team_id": 1569
+    },
+    {
+      "id": "PAR",
+      "name": "Paraguay",
+      "code": "PAR",
+      "flag_url": "https://media.api-sports.io/football/teams/2380.png",
+      "group_letter": "D",
+      "apifootball_team_id": 2380
+    },
+    {
+      "id": "ECU",
+      "name": "Ecuador",
+      "code": "ECU",
+      "flag_url": "https://media.api-sports.io/football/teams/2382.png",
+      "group_letter": "E",
+      "apifootball_team_id": 2382
+    },
+    {
+      "id": "USA",
+      "name": "United States",
+      "code": "USA",
+      "flag_url": "https://media.api-sports.io/football/teams/2384.png",
+      "group_letter": "D",
+      "apifootball_team_id": 2384
+    },
+    {
+      "id": "HAI",
+      "name": "Haiti",
+      "code": "HAI",
+      "flag_url": "https://media.api-sports.io/football/teams/2386.png",
+      "group_letter": "C",
+      "apifootball_team_id": 2386
+    },
+    {
+      "id": "NZL",
+      "name": "New Zealand",
+      "code": "NZL",
+      "flag_url": "https://media.api-sports.io/football/teams/4673.png",
+      "group_letter": "G",
+      "apifootball_team_id": 4673
+    },
+    {
+      "id": "CAN",
+      "name": "Canada",
+      "code": "CAN",
+      "flag_url": "https://media.api-sports.io/football/teams/5529.png",
+      "group_letter": "B",
+      "apifootball_team_id": 5529
+    },
+    {
+      "id": "CUW",
+      "name": "Curaçao",
+      "code": "CUW",
+      "flag_url": "https://media.api-sports.io/football/teams/5530.png",
+      "group_letter": "E",
+      "apifootball_team_id": 5530
+    }
+  ],
+  "rounds": [
+    {
+      "id": "group-r1",
+      "name": "Group Stage · Matchday 1",
+      "stage": "group",
+      "matchday": 1,
+      "deadline_at": "2026-06-11T15:00:00.000Z"
+    },
+    {
+      "id": "group-r2",
+      "name": "Group Stage · Matchday 2",
+      "stage": "group",
+      "matchday": 2,
+      "deadline_at": "2026-06-18T12:00:00.000Z"
+    },
+    {
+      "id": "group-r3",
+      "name": "Group Stage · Matchday 3",
+      "stage": "group",
+      "matchday": 3,
+      "deadline_at": "2026-06-24T15:00:00.000Z"
+    },
+    {
+      "id": "r32",
+      "name": "Round of 32",
+      "stage": "r32",
+      "matchday": null,
+      "deadline_at": "2026-06-28T15:00:00.000Z"
+    },
+    {
+      "id": "r16",
+      "name": "Round of 16",
+      "stage": "r16",
+      "matchday": null,
+      "deadline_at": "2026-07-04T15:00:00.000Z"
+    },
+    {
+      "id": "qf",
+      "name": "Quarter-finals",
+      "stage": "qf",
+      "matchday": null,
+      "deadline_at": "2026-07-09T15:00:00.000Z"
+    },
+    {
+      "id": "sf",
+      "name": "Semi-finals",
+      "stage": "sf",
+      "matchday": null,
+      "deadline_at": "2026-07-14T15:00:00.000Z"
+    },
+    {
+      "id": "third_place",
+      "name": "Third-place playoff",
+      "stage": "third_place",
+      "matchday": null,
+      "deadline_at": "2026-07-18T15:00:00.000Z"
+    },
+    {
+      "id": "final",
+      "name": "Final",
+      "stage": "final",
+      "matchday": null,
+      "deadline_at": "2026-07-19T15:00:00.000Z"
+    }
+  ],
+  "bracket_slots": [
+    {
+      "id": "team-bel",
+      "round_id": "group-r1",
+      "slot_label": "team-BEL",
+      "real_team_id": "BEL"
+    },
+    {
+      "id": "team-fra",
+      "round_id": "group-r1",
+      "slot_label": "team-FRA",
+      "real_team_id": "FRA"
+    },
+    {
+      "id": "team-cro",
+      "round_id": "group-r1",
+      "slot_label": "team-CRO",
+      "real_team_id": "CRO"
+    },
+    {
+      "id": "team-swe",
+      "round_id": "group-r1",
+      "slot_label": "team-SWE",
+      "real_team_id": "SWE"
+    },
+    {
+      "id": "team-bra",
+      "round_id": "group-r1",
+      "slot_label": "team-BRA",
+      "real_team_id": "BRA"
+    },
+    {
+      "id": "team-uru",
+      "round_id": "group-r1",
+      "slot_label": "team-URU",
+      "real_team_id": "URU"
+    },
+    {
+      "id": "team-col",
+      "round_id": "group-r1",
+      "slot_label": "team-COL",
+      "real_team_id": "COL"
+    },
+    {
+      "id": "team-esp",
+      "round_id": "group-r1",
+      "slot_label": "team-ESP",
+      "real_team_id": "ESP"
+    },
+    {
+      "id": "team-eng",
+      "round_id": "group-r1",
+      "slot_label": "team-ENG",
+      "real_team_id": "ENG"
+    },
+    {
+      "id": "team-pan",
+      "round_id": "group-r1",
+      "slot_label": "team-PAN",
+      "real_team_id": "PAN"
+    },
+    {
+      "id": "team-jpn",
+      "round_id": "group-r1",
+      "slot_label": "team-JPN",
+      "real_team_id": "JPN"
+    },
+    {
+      "id": "team-sen",
+      "round_id": "group-r1",
+      "slot_label": "team-SEN",
+      "real_team_id": "SEN"
+    },
+    {
+      "id": "team-sui",
+      "round_id": "group-r1",
+      "slot_label": "team-SUI",
+      "real_team_id": "SUI"
+    },
+    {
+      "id": "team-mex",
+      "round_id": "group-r1",
+      "slot_label": "team-MEX",
+      "real_team_id": "MEX"
+    },
+    {
+      "id": "team-kor",
+      "round_id": "group-r1",
+      "slot_label": "team-KOR",
+      "real_team_id": "KOR"
+    },
+    {
+      "id": "team-aus",
+      "round_id": "group-r1",
+      "slot_label": "team-AUS",
+      "real_team_id": "AUS"
+    },
+    {
+      "id": "team-irn",
+      "round_id": "group-r1",
+      "slot_label": "team-IRN",
+      "real_team_id": "IRN"
+    },
+    {
+      "id": "team-ksa",
+      "round_id": "group-r1",
+      "slot_label": "team-KSA",
+      "real_team_id": "KSA"
+    },
+    {
+      "id": "team-ger",
+      "round_id": "group-r1",
+      "slot_label": "team-GER",
+      "real_team_id": "GER"
+    },
+    {
+      "id": "team-arg",
+      "round_id": "group-r1",
+      "slot_label": "team-ARG",
+      "real_team_id": "ARG"
+    },
+    {
+      "id": "team-por",
+      "round_id": "group-r1",
+      "slot_label": "team-POR",
+      "real_team_id": "POR"
+    },
+    {
+      "id": "team-tun",
+      "round_id": "group-r1",
+      "slot_label": "team-TUN",
+      "real_team_id": "TUN"
+    },
+    {
+      "id": "team-mar",
+      "round_id": "group-r1",
+      "slot_label": "team-MAR",
+      "real_team_id": "MAR"
+    },
+    {
+      "id": "team-egy",
+      "round_id": "group-r1",
+      "slot_label": "team-EGY",
+      "real_team_id": "EGY"
+    },
+    {
+      "id": "team-cze",
+      "round_id": "group-r1",
+      "slot_label": "team-CZE",
+      "real_team_id": "CZE"
+    },
+    {
+      "id": "team-aut",
+      "round_id": "group-r1",
+      "slot_label": "team-AUT",
+      "real_team_id": "AUT"
+    },
+    {
+      "id": "team-tur",
+      "round_id": "group-r1",
+      "slot_label": "team-TUR",
+      "real_team_id": "TUR"
+    },
+    {
+      "id": "team-nor",
+      "round_id": "group-r1",
+      "slot_label": "team-NOR",
+      "real_team_id": "NOR"
+    },
+    {
+      "id": "team-sco",
+      "round_id": "group-r1",
+      "slot_label": "team-SCO",
+      "real_team_id": "SCO"
+    },
+    {
+      "id": "team-bih",
+      "round_id": "group-r1",
+      "slot_label": "team-BIH",
+      "real_team_id": "BIH"
+    },
+    {
+      "id": "team-ned",
+      "round_id": "group-r1",
+      "slot_label": "team-NED",
+      "real_team_id": "NED"
+    },
+    {
+      "id": "team-civ",
+      "round_id": "group-r1",
+      "slot_label": "team-CIV",
+      "real_team_id": "CIV"
+    },
+    {
+      "id": "team-gha",
+      "round_id": "group-r1",
+      "slot_label": "team-GHA",
+      "real_team_id": "GHA"
+    },
+    {
+      "id": "team-cod",
+      "round_id": "group-r1",
+      "slot_label": "team-COD",
+      "real_team_id": "COD"
+    },
+    {
+      "id": "team-rsa",
+      "round_id": "group-r1",
+      "slot_label": "team-RSA",
+      "real_team_id": "RSA"
+    },
+    {
+      "id": "team-alg",
+      "round_id": "group-r1",
+      "slot_label": "team-ALG",
+      "real_team_id": "ALG"
+    },
+    {
+      "id": "team-cpv",
+      "round_id": "group-r1",
+      "slot_label": "team-CPV",
+      "real_team_id": "CPV"
+    },
+    {
+      "id": "team-jor",
+      "round_id": "group-r1",
+      "slot_label": "team-JOR",
+      "real_team_id": "JOR"
+    },
+    {
+      "id": "team-irq",
+      "round_id": "group-r1",
+      "slot_label": "team-IRQ",
+      "real_team_id": "IRQ"
+    },
+    {
+      "id": "team-uzb",
+      "round_id": "group-r1",
+      "slot_label": "team-UZB",
+      "real_team_id": "UZB"
+    },
+    {
+      "id": "team-qat",
+      "round_id": "group-r1",
+      "slot_label": "team-QAT",
+      "real_team_id": "QAT"
+    },
+    {
+      "id": "team-par",
+      "round_id": "group-r1",
+      "slot_label": "team-PAR",
+      "real_team_id": "PAR"
+    },
+    {
+      "id": "team-ecu",
+      "round_id": "group-r1",
+      "slot_label": "team-ECU",
+      "real_team_id": "ECU"
+    },
+    {
+      "id": "team-usa",
+      "round_id": "group-r1",
+      "slot_label": "team-USA",
+      "real_team_id": "USA"
+    },
+    {
+      "id": "team-hai",
+      "round_id": "group-r1",
+      "slot_label": "team-HAI",
+      "real_team_id": "HAI"
+    },
+    {
+      "id": "team-nzl",
+      "round_id": "group-r1",
+      "slot_label": "team-NZL",
+      "real_team_id": "NZL"
+    },
+    {
+      "id": "team-can",
+      "round_id": "group-r1",
+      "slot_label": "team-CAN",
+      "real_team_id": "CAN"
+    },
+    {
+      "id": "team-cuw",
+      "round_id": "group-r1",
+      "slot_label": "team-CUW",
+      "real_team_id": "CUW"
+    },
+    {
+      "id": "r32-winner-A",
+      "round_id": "r32",
+      "slot_label": "winner-A",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-B",
+      "round_id": "r32",
+      "slot_label": "winner-B",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-C",
+      "round_id": "r32",
+      "slot_label": "winner-C",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-D",
+      "round_id": "r32",
+      "slot_label": "winner-D",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-E",
+      "round_id": "r32",
+      "slot_label": "winner-E",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-F",
+      "round_id": "r32",
+      "slot_label": "winner-F",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-G",
+      "round_id": "r32",
+      "slot_label": "winner-G",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-H",
+      "round_id": "r32",
+      "slot_label": "winner-H",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-I",
+      "round_id": "r32",
+      "slot_label": "winner-I",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-J",
+      "round_id": "r32",
+      "slot_label": "winner-J",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-K",
+      "round_id": "r32",
+      "slot_label": "winner-K",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-winner-L",
+      "round_id": "r32",
+      "slot_label": "winner-L",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-A",
+      "round_id": "r32",
+      "slot_label": "runner-up-A",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-B",
+      "round_id": "r32",
+      "slot_label": "runner-up-B",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-C",
+      "round_id": "r32",
+      "slot_label": "runner-up-C",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-D",
+      "round_id": "r32",
+      "slot_label": "runner-up-D",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-E",
+      "round_id": "r32",
+      "slot_label": "runner-up-E",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-F",
+      "round_id": "r32",
+      "slot_label": "runner-up-F",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-G",
+      "round_id": "r32",
+      "slot_label": "runner-up-G",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-H",
+      "round_id": "r32",
+      "slot_label": "runner-up-H",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-I",
+      "round_id": "r32",
+      "slot_label": "runner-up-I",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-J",
+      "round_id": "r32",
+      "slot_label": "runner-up-J",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-K",
+      "round_id": "r32",
+      "slot_label": "runner-up-K",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-runner-up-L",
+      "round_id": "r32",
+      "slot_label": "runner-up-L",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-1",
+      "round_id": "r32",
+      "slot_label": "best-3rd-1",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-2",
+      "round_id": "r32",
+      "slot_label": "best-3rd-2",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-3",
+      "round_id": "r32",
+      "slot_label": "best-3rd-3",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-4",
+      "round_id": "r32",
+      "slot_label": "best-3rd-4",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-5",
+      "round_id": "r32",
+      "slot_label": "best-3rd-5",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-6",
+      "round_id": "r32",
+      "slot_label": "best-3rd-6",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-7",
+      "round_id": "r32",
+      "slot_label": "best-3rd-7",
+      "real_team_id": null
+    },
+    {
+      "id": "r32-best-3rd-8",
+      "round_id": "r32",
+      "slot_label": "best-3rd-8",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-1-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-1-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-2-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-2-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-3-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-3-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-4-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-4-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-5-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-5-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-6-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-6-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-7-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-7-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-8-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-8-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-9-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-9-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-10-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-10-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-11-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-11-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-12-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-12-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-13-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-13-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-14-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-14-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-15-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-15-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "r16-r32-match-16-winner",
+      "round_id": "r16",
+      "slot_label": "r32-match-16-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-1-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-1-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-2-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-2-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-3-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-3-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-4-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-4-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-5-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-5-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-6-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-6-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-7-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-7-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "qf-r16-match-8-winner",
+      "round_id": "qf",
+      "slot_label": "r16-match-8-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "sf-qf-match-1-winner",
+      "round_id": "sf",
+      "slot_label": "qf-match-1-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "sf-qf-match-2-winner",
+      "round_id": "sf",
+      "slot_label": "qf-match-2-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "sf-qf-match-3-winner",
+      "round_id": "sf",
+      "slot_label": "qf-match-3-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "sf-qf-match-4-winner",
+      "round_id": "sf",
+      "slot_label": "qf-match-4-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "final-sf-match-1-winner",
+      "round_id": "final",
+      "slot_label": "sf-match-1-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "final-sf-match-2-winner",
+      "round_id": "final",
+      "slot_label": "sf-match-2-winner",
+      "real_team_id": null
+    },
+    {
+      "id": "third_place-sf-match-1-loser",
+      "round_id": "third_place",
+      "slot_label": "sf-match-1-loser",
+      "real_team_id": null
+    },
+    {
+      "id": "third_place-sf-match-2-loser",
+      "round_id": "third_place",
+      "slot_label": "sf-match-2-loser",
+      "real_team_id": null
+    }
+  ],
+  "matches": [
+    {
+      "id": "m-1489369",
+      "round_id": "group-r1",
+      "home_slot_id": "team-mex",
+      "away_slot_id": "team-rsa",
+      "scheduled_at": "2026-06-11T19:00:00+00:00",
+      "apifootball_fixture_id": 1489369
+    },
+    {
+      "id": "m-1538999",
+      "round_id": "group-r1",
+      "home_slot_id": "team-kor",
+      "away_slot_id": "team-cze",
+      "scheduled_at": "2026-06-12T02:00:00+00:00",
+      "apifootball_fixture_id": 1538999
+    },
+    {
+      "id": "m-1539000",
+      "round_id": "group-r1",
+      "home_slot_id": "team-can",
+      "away_slot_id": "team-bih",
+      "scheduled_at": "2026-06-12T19:00:00+00:00",
+      "apifootball_fixture_id": 1539000
+    },
+    {
+      "id": "m-1489370",
+      "round_id": "group-r1",
+      "home_slot_id": "team-usa",
+      "away_slot_id": "team-par",
+      "scheduled_at": "2026-06-13T01:00:00+00:00",
+      "apifootball_fixture_id": 1489370
+    },
+    {
+      "id": "m-1489373",
+      "round_id": "group-r1",
+      "home_slot_id": "team-qat",
+      "away_slot_id": "team-sui",
+      "scheduled_at": "2026-06-13T19:00:00+00:00",
+      "apifootball_fixture_id": 1489373
+    },
+    {
+      "id": "m-1489371",
+      "round_id": "group-r1",
+      "home_slot_id": "team-bra",
+      "away_slot_id": "team-mar",
+      "scheduled_at": "2026-06-13T22:00:00+00:00",
+      "apifootball_fixture_id": 1489371
+    },
+    {
+      "id": "m-1489372",
+      "round_id": "group-r1",
+      "home_slot_id": "team-hai",
+      "away_slot_id": "team-sco",
+      "scheduled_at": "2026-06-14T01:00:00+00:00",
+      "apifootball_fixture_id": 1489372
+    },
+    {
+      "id": "m-1539001",
+      "round_id": "group-r1",
+      "home_slot_id": "team-aus",
+      "away_slot_id": "team-tur",
+      "scheduled_at": "2026-06-14T04:00:00+00:00",
+      "apifootball_fixture_id": 1539001
+    },
+    {
+      "id": "m-1489374",
+      "round_id": "group-r1",
+      "home_slot_id": "team-ger",
+      "away_slot_id": "team-cuw",
+      "scheduled_at": "2026-06-14T17:00:00+00:00",
+      "apifootball_fixture_id": 1489374
+    },
+    {
+      "id": "m-1489376",
+      "round_id": "group-r1",
+      "home_slot_id": "team-ned",
+      "away_slot_id": "team-jpn",
+      "scheduled_at": "2026-06-14T20:00:00+00:00",
+      "apifootball_fixture_id": 1489376
+    },
+    {
+      "id": "m-1489375",
+      "round_id": "group-r1",
+      "home_slot_id": "team-civ",
+      "away_slot_id": "team-ecu",
+      "scheduled_at": "2026-06-14T23:00:00+00:00",
+      "apifootball_fixture_id": 1489375
+    },
+    {
+      "id": "m-1539002",
+      "round_id": "group-r1",
+      "home_slot_id": "team-swe",
+      "away_slot_id": "team-tun",
+      "scheduled_at": "2026-06-15T02:00:00+00:00",
+      "apifootball_fixture_id": 1539002
+    },
+    {
+      "id": "m-1489380",
+      "round_id": "group-r1",
+      "home_slot_id": "team-esp",
+      "away_slot_id": "team-cpv",
+      "scheduled_at": "2026-06-15T16:00:00+00:00",
+      "apifootball_fixture_id": 1489380
+    },
+    {
+      "id": "m-1489377",
+      "round_id": "group-r1",
+      "home_slot_id": "team-bel",
+      "away_slot_id": "team-egy",
+      "scheduled_at": "2026-06-15T19:00:00+00:00",
+      "apifootball_fixture_id": 1489377
+    },
+    {
+      "id": "m-1489379",
+      "round_id": "group-r1",
+      "home_slot_id": "team-ksa",
+      "away_slot_id": "team-uru",
+      "scheduled_at": "2026-06-15T22:00:00+00:00",
+      "apifootball_fixture_id": 1489379
+    },
+    {
+      "id": "m-1489378",
+      "round_id": "group-r1",
+      "home_slot_id": "team-irn",
+      "away_slot_id": "team-nzl",
+      "scheduled_at": "2026-06-16T01:00:00+00:00",
+      "apifootball_fixture_id": 1489378
+    },
+    {
+      "id": "m-1489383",
+      "round_id": "group-r1",
+      "home_slot_id": "team-fra",
+      "away_slot_id": "team-sen",
+      "scheduled_at": "2026-06-16T19:00:00+00:00",
+      "apifootball_fixture_id": 1489383
+    },
+    {
+      "id": "m-1539016",
+      "round_id": "group-r1",
+      "home_slot_id": "team-irq",
+      "away_slot_id": "team-nor",
+      "scheduled_at": "2026-06-16T22:00:00+00:00",
+      "apifootball_fixture_id": 1539016
+    },
+    {
+      "id": "m-1489381",
+      "round_id": "group-r1",
+      "home_slot_id": "team-arg",
+      "away_slot_id": "team-alg",
+      "scheduled_at": "2026-06-17T01:00:00+00:00",
+      "apifootball_fixture_id": 1489381
+    },
+    {
+      "id": "m-1489382",
+      "round_id": "group-r1",
+      "home_slot_id": "team-aut",
+      "away_slot_id": "team-jor",
+      "scheduled_at": "2026-06-17T04:00:00+00:00",
+      "apifootball_fixture_id": 1489382
+    },
+    {
+      "id": "m-1539003",
+      "round_id": "group-r1",
+      "home_slot_id": "team-por",
+      "away_slot_id": "team-cod",
+      "scheduled_at": "2026-06-17T17:00:00+00:00",
+      "apifootball_fixture_id": 1539003
+    },
+    {
+      "id": "m-1489384",
+      "round_id": "group-r1",
+      "home_slot_id": "team-eng",
+      "away_slot_id": "team-cro",
+      "scheduled_at": "2026-06-17T20:00:00+00:00",
+      "apifootball_fixture_id": 1489384
+    },
+    {
+      "id": "m-1489385",
+      "round_id": "group-r1",
+      "home_slot_id": "team-gha",
+      "away_slot_id": "team-pan",
+      "scheduled_at": "2026-06-17T23:00:00+00:00",
+      "apifootball_fixture_id": 1489385
+    },
+    {
+      "id": "m-1489386",
+      "round_id": "group-r1",
+      "home_slot_id": "team-uzb",
+      "away_slot_id": "team-col",
+      "scheduled_at": "2026-06-18T02:00:00+00:00",
+      "apifootball_fixture_id": 1489386
+    },
+    {
+      "id": "m-1539004",
+      "round_id": "group-r2",
+      "home_slot_id": "team-cze",
+      "away_slot_id": "team-rsa",
+      "scheduled_at": "2026-06-18T16:00:00+00:00",
+      "apifootball_fixture_id": 1539004
+    },
+    {
+      "id": "m-1539005",
+      "round_id": "group-r2",
+      "home_slot_id": "team-sui",
+      "away_slot_id": "team-bih",
+      "scheduled_at": "2026-06-18T19:00:00+00:00",
+      "apifootball_fixture_id": 1539005
+    },
+    {
+      "id": "m-1489387",
+      "round_id": "group-r2",
+      "home_slot_id": "team-can",
+      "away_slot_id": "team-qat",
+      "scheduled_at": "2026-06-18T22:00:00+00:00",
+      "apifootball_fixture_id": 1489387
+    },
+    {
+      "id": "m-1489388",
+      "round_id": "group-r2",
+      "home_slot_id": "team-mex",
+      "away_slot_id": "team-kor",
+      "scheduled_at": "2026-06-19T01:00:00+00:00",
+      "apifootball_fixture_id": 1489388
+    },
+    {
+      "id": "m-1489391",
+      "round_id": "group-r2",
+      "home_slot_id": "team-usa",
+      "away_slot_id": "team-aus",
+      "scheduled_at": "2026-06-19T19:00:00+00:00",
+      "apifootball_fixture_id": 1489391
+    },
+    {
+      "id": "m-1489390",
+      "round_id": "group-r2",
+      "home_slot_id": "team-sco",
+      "away_slot_id": "team-mar",
+      "scheduled_at": "2026-06-19T22:00:00+00:00",
+      "apifootball_fixture_id": 1489390
+    },
+    {
+      "id": "m-1489389",
+      "round_id": "group-r2",
+      "home_slot_id": "team-bra",
+      "away_slot_id": "team-hai",
+      "scheduled_at": "2026-06-20T00:30:00+00:00",
+      "apifootball_fixture_id": 1489389
+    },
+    {
+      "id": "m-1539006",
+      "round_id": "group-r2",
+      "home_slot_id": "team-tur",
+      "away_slot_id": "team-par",
+      "scheduled_at": "2026-06-20T03:00:00+00:00",
+      "apifootball_fixture_id": 1539006
+    },
+    {
+      "id": "m-1539007",
+      "round_id": "group-r2",
+      "home_slot_id": "team-ned",
+      "away_slot_id": "team-swe",
+      "scheduled_at": "2026-06-20T17:00:00+00:00",
+      "apifootball_fixture_id": 1539007
+    },
+    {
+      "id": "m-1489393",
+      "round_id": "group-r2",
+      "home_slot_id": "team-ger",
+      "away_slot_id": "team-civ",
+      "scheduled_at": "2026-06-20T20:00:00+00:00",
+      "apifootball_fixture_id": 1489393
+    },
+    {
+      "id": "m-1489392",
+      "round_id": "group-r2",
+      "home_slot_id": "team-ecu",
+      "away_slot_id": "team-cuw",
+      "scheduled_at": "2026-06-21T00:00:00+00:00",
+      "apifootball_fixture_id": 1489392
+    },
+    {
+      "id": "m-1489394",
+      "round_id": "group-r2",
+      "home_slot_id": "team-tun",
+      "away_slot_id": "team-jpn",
+      "scheduled_at": "2026-06-21T04:00:00+00:00",
+      "apifootball_fixture_id": 1489394
+    },
+    {
+      "id": "m-1489397",
+      "round_id": "group-r2",
+      "home_slot_id": "team-esp",
+      "away_slot_id": "team-ksa",
+      "scheduled_at": "2026-06-21T16:00:00+00:00",
+      "apifootball_fixture_id": 1489397
+    },
+    {
+      "id": "m-1489395",
+      "round_id": "group-r2",
+      "home_slot_id": "team-bel",
+      "away_slot_id": "team-irn",
+      "scheduled_at": "2026-06-21T19:00:00+00:00",
+      "apifootball_fixture_id": 1489395
+    },
+    {
+      "id": "m-1489398",
+      "round_id": "group-r2",
+      "home_slot_id": "team-uru",
+      "away_slot_id": "team-cpv",
+      "scheduled_at": "2026-06-21T22:00:00+00:00",
+      "apifootball_fixture_id": 1489398
+    },
+    {
+      "id": "m-1489396",
+      "round_id": "group-r2",
+      "home_slot_id": "team-nzl",
+      "away_slot_id": "team-egy",
+      "scheduled_at": "2026-06-22T01:00:00+00:00",
+      "apifootball_fixture_id": 1489396
+    },
+    {
+      "id": "m-1489399",
+      "round_id": "group-r2",
+      "home_slot_id": "team-arg",
+      "away_slot_id": "team-aut",
+      "scheduled_at": "2026-06-22T17:00:00+00:00",
+      "apifootball_fixture_id": 1489399
+    },
+    {
+      "id": "m-1539017",
+      "round_id": "group-r2",
+      "home_slot_id": "team-fra",
+      "away_slot_id": "team-irq",
+      "scheduled_at": "2026-06-22T21:00:00+00:00",
+      "apifootball_fixture_id": 1539017
+    },
+    {
+      "id": "m-1489401",
+      "round_id": "group-r2",
+      "home_slot_id": "team-nor",
+      "away_slot_id": "team-sen",
+      "scheduled_at": "2026-06-23T00:00:00+00:00",
+      "apifootball_fixture_id": 1489401
+    },
+    {
+      "id": "m-1489400",
+      "round_id": "group-r2",
+      "home_slot_id": "team-jor",
+      "away_slot_id": "team-alg",
+      "scheduled_at": "2026-06-23T03:00:00+00:00",
+      "apifootball_fixture_id": 1489400
+    },
+    {
+      "id": "m-1489404",
+      "round_id": "group-r2",
+      "home_slot_id": "team-por",
+      "away_slot_id": "team-uzb",
+      "scheduled_at": "2026-06-23T17:00:00+00:00",
+      "apifootball_fixture_id": 1489404
+    },
+    {
+      "id": "m-1489402",
+      "round_id": "group-r2",
+      "home_slot_id": "team-eng",
+      "away_slot_id": "team-gha",
+      "scheduled_at": "2026-06-23T20:00:00+00:00",
+      "apifootball_fixture_id": 1489402
+    },
+    {
+      "id": "m-1489403",
+      "round_id": "group-r2",
+      "home_slot_id": "team-pan",
+      "away_slot_id": "team-cro",
+      "scheduled_at": "2026-06-23T23:00:00+00:00",
+      "apifootball_fixture_id": 1489403
+    },
+    {
+      "id": "m-1539008",
+      "round_id": "group-r2",
+      "home_slot_id": "team-col",
+      "away_slot_id": "team-cod",
+      "scheduled_at": "2026-06-24T02:00:00+00:00",
+      "apifootball_fixture_id": 1539008
+    },
+    {
+      "id": "m-1489408",
+      "round_id": "group-r3",
+      "home_slot_id": "team-sui",
+      "away_slot_id": "team-can",
+      "scheduled_at": "2026-06-24T19:00:00+00:00",
+      "apifootball_fixture_id": 1489408
+    },
+    {
+      "id": "m-1539009",
+      "round_id": "group-r3",
+      "home_slot_id": "team-bih",
+      "away_slot_id": "team-qat",
+      "scheduled_at": "2026-06-24T19:00:00+00:00",
+      "apifootball_fixture_id": 1539009
+    },
+    {
+      "id": "m-1489405",
+      "round_id": "group-r3",
+      "home_slot_id": "team-mar",
+      "away_slot_id": "team-hai",
+      "scheduled_at": "2026-06-24T22:00:00+00:00",
+      "apifootball_fixture_id": 1489405
+    },
+    {
+      "id": "m-1489406",
+      "round_id": "group-r3",
+      "home_slot_id": "team-sco",
+      "away_slot_id": "team-bra",
+      "scheduled_at": "2026-06-24T22:00:00+00:00",
+      "apifootball_fixture_id": 1489406
+    },
+    {
+      "id": "m-1539010",
+      "round_id": "group-r3",
+      "home_slot_id": "team-cze",
+      "away_slot_id": "team-mex",
+      "scheduled_at": "2026-06-25T01:00:00+00:00",
+      "apifootball_fixture_id": 1539010
+    },
+    {
+      "id": "m-1489407",
+      "round_id": "group-r3",
+      "home_slot_id": "team-rsa",
+      "away_slot_id": "team-kor",
+      "scheduled_at": "2026-06-25T01:00:00+00:00",
+      "apifootball_fixture_id": 1489407
+    },
+    {
+      "id": "m-1489410",
+      "round_id": "group-r3",
+      "home_slot_id": "team-ecu",
+      "away_slot_id": "team-ger",
+      "scheduled_at": "2026-06-25T20:00:00+00:00",
+      "apifootball_fixture_id": 1489410
+    },
+    {
+      "id": "m-1489409",
+      "round_id": "group-r3",
+      "home_slot_id": "team-cuw",
+      "away_slot_id": "team-civ",
+      "scheduled_at": "2026-06-25T20:00:00+00:00",
+      "apifootball_fixture_id": 1489409
+    },
+    {
+      "id": "m-1539011",
+      "round_id": "group-r3",
+      "home_slot_id": "team-jpn",
+      "away_slot_id": "team-swe",
+      "scheduled_at": "2026-06-25T23:00:00+00:00",
+      "apifootball_fixture_id": 1539011
+    },
+    {
+      "id": "m-1489412",
+      "round_id": "group-r3",
+      "home_slot_id": "team-tun",
+      "away_slot_id": "team-ned",
+      "scheduled_at": "2026-06-25T23:00:00+00:00",
+      "apifootball_fixture_id": 1489412
+    },
+    {
+      "id": "m-1539012",
+      "round_id": "group-r3",
+      "home_slot_id": "team-tur",
+      "away_slot_id": "team-usa",
+      "scheduled_at": "2026-06-26T02:00:00+00:00",
+      "apifootball_fixture_id": 1539012
+    },
+    {
+      "id": "m-1489411",
+      "round_id": "group-r3",
+      "home_slot_id": "team-par",
+      "away_slot_id": "team-aus",
+      "scheduled_at": "2026-06-26T02:00:00+00:00",
+      "apifootball_fixture_id": 1489411
+    },
+    {
+      "id": "m-1539074",
+      "round_id": "group-r3",
+      "home_slot_id": "team-sen",
+      "away_slot_id": "team-irq",
+      "scheduled_at": "2026-06-26T19:00:00+00:00",
+      "apifootball_fixture_id": 1539074
+    },
+    {
+      "id": "m-1489416",
+      "round_id": "group-r3",
+      "home_slot_id": "team-nor",
+      "away_slot_id": "team-fra",
+      "scheduled_at": "2026-06-26T19:00:00+00:00",
+      "apifootball_fixture_id": 1489416
+    },
+    {
+      "id": "m-1489417",
+      "round_id": "group-r3",
+      "home_slot_id": "team-uru",
+      "away_slot_id": "team-esp",
+      "scheduled_at": "2026-06-27T00:00:00+00:00",
+      "apifootball_fixture_id": 1489417
+    },
+    {
+      "id": "m-1489413",
+      "round_id": "group-r3",
+      "home_slot_id": "team-cpv",
+      "away_slot_id": "team-ksa",
+      "scheduled_at": "2026-06-27T00:00:00+00:00",
+      "apifootball_fixture_id": 1489413
+    },
+    {
+      "id": "m-1489414",
+      "round_id": "group-r3",
+      "home_slot_id": "team-egy",
+      "away_slot_id": "team-irn",
+      "scheduled_at": "2026-06-27T03:00:00+00:00",
+      "apifootball_fixture_id": 1489414
+    },
+    {
+      "id": "m-1489415",
+      "round_id": "group-r3",
+      "home_slot_id": "team-nzl",
+      "away_slot_id": "team-bel",
+      "scheduled_at": "2026-06-27T03:00:00+00:00",
+      "apifootball_fixture_id": 1489415
+    },
+    {
+      "id": "m-1489420",
+      "round_id": "group-r3",
+      "home_slot_id": "team-cro",
+      "away_slot_id": "team-gha",
+      "scheduled_at": "2026-06-27T21:00:00+00:00",
+      "apifootball_fixture_id": 1489420
+    },
+    {
+      "id": "m-1489422",
+      "round_id": "group-r3",
+      "home_slot_id": "team-pan",
+      "away_slot_id": "team-eng",
+      "scheduled_at": "2026-06-27T21:00:00+00:00",
+      "apifootball_fixture_id": 1489422
+    },
+    {
+      "id": "m-1489419",
+      "round_id": "group-r3",
+      "home_slot_id": "team-col",
+      "away_slot_id": "team-por",
+      "scheduled_at": "2026-06-27T23:30:00+00:00",
+      "apifootball_fixture_id": 1489419
+    },
+    {
+      "id": "m-1539013",
+      "round_id": "group-r3",
+      "home_slot_id": "team-cod",
+      "away_slot_id": "team-uzb",
+      "scheduled_at": "2026-06-27T23:30:00+00:00",
+      "apifootball_fixture_id": 1539013
+    },
+    {
+      "id": "m-1489418",
+      "round_id": "group-r3",
+      "home_slot_id": "team-alg",
+      "away_slot_id": "team-aut",
+      "scheduled_at": "2026-06-28T02:00:00+00:00",
+      "apifootball_fixture_id": 1489418
+    },
+    {
+      "id": "m-1489421",
+      "round_id": "group-r3",
+      "home_slot_id": "team-jor",
+      "away_slot_id": "team-arg",
+      "scheduled_at": "2026-06-28T02:00:00+00:00",
+      "apifootball_fixture_id": 1489421
+    },
+    {
+      "id": "m-r32-1",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-A",
+      "away_slot_id": "r32-best-3rd-1",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-2",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-C",
+      "away_slot_id": "r32-runner-up-F",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-3",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-E",
+      "away_slot_id": "r32-best-3rd-2",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-4",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-B",
+      "away_slot_id": "r32-runner-up-A",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-5",
+      "round_id": "r32",
+      "home_slot_id": "r32-runner-up-C",
+      "away_slot_id": "r32-runner-up-E",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-6",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-D",
+      "away_slot_id": "r32-best-3rd-3",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-7",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-F",
+      "away_slot_id": "r32-runner-up-B",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-8",
+      "round_id": "r32",
+      "home_slot_id": "r32-runner-up-D",
+      "away_slot_id": "r32-best-3rd-4",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-9",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-G",
+      "away_slot_id": "r32-best-3rd-5",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-10",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-I",
+      "away_slot_id": "r32-runner-up-L",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-11",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-K",
+      "away_slot_id": "r32-best-3rd-6",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-12",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-H",
+      "away_slot_id": "r32-runner-up-G",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-13",
+      "round_id": "r32",
+      "home_slot_id": "r32-runner-up-I",
+      "away_slot_id": "r32-runner-up-K",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-14",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-J",
+      "away_slot_id": "r32-best-3rd-7",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-15",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-L",
+      "away_slot_id": "r32-runner-up-H",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-16",
+      "round_id": "r32",
+      "home_slot_id": "r32-runner-up-J",
+      "away_slot_id": "r32-best-3rd-8",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-1",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-1-winner",
+      "away_slot_id": "r16-r32-match-2-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-2",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-3-winner",
+      "away_slot_id": "r16-r32-match-4-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-3",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-5-winner",
+      "away_slot_id": "r16-r32-match-6-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-4",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-7-winner",
+      "away_slot_id": "r16-r32-match-8-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-5",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-9-winner",
+      "away_slot_id": "r16-r32-match-10-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-6",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-11-winner",
+      "away_slot_id": "r16-r32-match-12-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-7",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-13-winner",
+      "away_slot_id": "r16-r32-match-14-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r16-8",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-15-winner",
+      "away_slot_id": "r16-r32-match-16-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-qf-1",
+      "round_id": "qf",
+      "home_slot_id": "qf-r16-match-1-winner",
+      "away_slot_id": "qf-r16-match-2-winner",
+      "scheduled_at": "2026-07-09T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-qf-2",
+      "round_id": "qf",
+      "home_slot_id": "qf-r16-match-3-winner",
+      "away_slot_id": "qf-r16-match-4-winner",
+      "scheduled_at": "2026-07-09T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-qf-3",
+      "round_id": "qf",
+      "home_slot_id": "qf-r16-match-5-winner",
+      "away_slot_id": "qf-r16-match-6-winner",
+      "scheduled_at": "2026-07-09T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-qf-4",
+      "round_id": "qf",
+      "home_slot_id": "qf-r16-match-7-winner",
+      "away_slot_id": "qf-r16-match-8-winner",
+      "scheduled_at": "2026-07-09T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-sf-1",
+      "round_id": "sf",
+      "home_slot_id": "sf-qf-match-1-winner",
+      "away_slot_id": "sf-qf-match-2-winner",
+      "scheduled_at": "2026-07-14T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-sf-2",
+      "round_id": "sf",
+      "home_slot_id": "sf-qf-match-3-winner",
+      "away_slot_id": "sf-qf-match-4-winner",
+      "scheduled_at": "2026-07-14T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-third-place",
+      "round_id": "third_place",
+      "home_slot_id": "third_place-sf-match-1-loser",
+      "away_slot_id": "third_place-sf-match-2-loser",
+      "scheduled_at": "2026-07-18T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-final",
+      "round_id": "final",
+      "home_slot_id": "final-sf-match-1-winner",
+      "away_slot_id": "final-sf-match-2-winner",
+      "scheduled_at": "2026-07-19T19:00:00Z",
+      "apifootball_fixture_id": null
+    }
+  ]
+}
