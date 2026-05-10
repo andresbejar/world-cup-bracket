@@ -347,3 +347,103 @@ export function populateR32Slots(
 
   return assignments;
 }
+
+// ======================================================================
+// Per-match scoring
+// ======================================================================
+
+export type MatchStatus =
+  | "scheduled"
+  | "in_progress"
+  | "finished"
+  | "cancelled";
+
+export type MatchStage = "group" | "knockout";
+
+export interface MatchPrediction {
+  predicted_home_score: number;
+  predicted_away_score: number;
+  /**
+   * Knockout matches: the bracket_slot id the user picked to advance.
+   * For tied predicted scores in a knockout, this is the user's
+   * penalty-winner pick. For group matches: ignored.
+   */
+  predicted_winning_slot_id: string | null;
+}
+
+export interface ActualMatch {
+  status: MatchStatus;
+  stage: MatchStage;
+  home_slot_id: string;
+  away_slot_id: string;
+  /**
+   * Goals at full time + extra time. Penalty-shootout goals are NEVER
+   * counted (per design doc § Premise 7 + matches table comment).
+   * Null until the match flips to `finished`.
+   */
+  home_score: number | null;
+  away_score: number | null;
+  /**
+   * Knockout matches only: the slot that advanced. Equal to home_slot_id
+   * or away_slot_id. For penalty-decided knockouts this is the shootout
+   * winner. Null until the knockout match is finished.
+   */
+  winning_slot_id: string | null;
+}
+
+/**
+ * Score a single user prediction against a finished match.
+ *
+ *   3 pts — exact 90+ET score AND correct outcome (i.e. correct winner
+ *           for knockouts, or correct draw/winner for groups)
+ *   1 pt — correct outcome but score wrong
+ *   0 pts — outcome wrong (regardless of any partial-score match)
+ *
+ * Returns null when the match has not finished yet — scoring runs only
+ * on `finished`. A `cancelled` match returns 0 explicitly: the user
+ * earned no points, and the row should be marked scored so the polling
+ * job stops re-evaluating it.
+ *
+ * Group-stage outcome = the sign of (home_score - away_score) on both
+ * sides. Knockout-stage outcome = whether `predicted_winning_slot_id`
+ * matches `winning_slot_id`. The function never tries to derive a
+ * knockout winner from the score — penalty resolution is the caller's
+ * concern (it lands as `winning_slot_id`).
+ */
+export function computeMatchPoints(
+  prediction: MatchPrediction,
+  actual: ActualMatch,
+): number | null {
+  if (actual.status === "cancelled") return 0;
+  if (actual.status !== "finished") return null;
+  if (actual.home_score == null || actual.away_score == null) return null;
+
+  const exactScore =
+    prediction.predicted_home_score === actual.home_score &&
+    prediction.predicted_away_score === actual.away_score;
+
+  if (actual.stage === "group") {
+    const predictedSign = signOf(
+      prediction.predicted_home_score - prediction.predicted_away_score,
+    );
+    const actualSign = signOf(actual.home_score - actual.away_score);
+    const sameOutcome = predictedSign === actualSign;
+    if (exactScore && sameOutcome) return 3;
+    if (sameOutcome) return 1;
+    return 0;
+  }
+
+  // Knockout — outcome is decided by which slot advanced.
+  if (actual.winning_slot_id == null) return null;
+  const sameWinner =
+    prediction.predicted_winning_slot_id === actual.winning_slot_id;
+  if (exactScore && sameWinner) return 3;
+  if (sameWinner) return 1;
+  return 0;
+}
+
+function signOf(n: number): -1 | 0 | 1 {
+  if (n > 0) return 1;
+  if (n < 0) return -1;
+  return 0;
+}

@@ -1,13 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
   computeGroupStandings,
+  computeMatchPoints,
   populateR32Slots,
   DuplicateThirdPlacePickError,
   GROUP_LETTERS,
   THIRD_PLACE_SLOT_LABELS,
+  type ActualMatch,
   type GroupStanding,
   type GroupStandings,
+  type MatchPrediction,
   type MatchScore,
+  type MatchStatus,
   type Team,
   type ThirdPlacePick,
 } from "./bracket";
@@ -419,5 +423,133 @@ describe("populateR32Slots", () => {
     expect(out.find((s) => s.slot_label === "winner-F")?.team_id).toBeNull();
     expect(out.find((s) => s.slot_label === "runner-up-F")?.team_id).toBeNull();
     expect(out.find((s) => s.slot_label === "winner-A")?.team_id).toBe("A1");
+  });
+});
+
+// ----------------------------------------------------------------------
+// computeMatchPoints
+// ----------------------------------------------------------------------
+
+function groupMatch(
+  status: MatchStatus,
+  home_score: number | null,
+  away_score: number | null,
+): ActualMatch {
+  return {
+    status,
+    stage: "group",
+    home_slot_id: "slot-home",
+    away_slot_id: "slot-away",
+    home_score,
+    away_score,
+    winning_slot_id: null,
+  };
+}
+
+function knockoutMatch(
+  status: MatchStatus,
+  home_score: number | null,
+  away_score: number | null,
+  winning_slot_id: string | null,
+): ActualMatch {
+  return {
+    status,
+    stage: "knockout",
+    home_slot_id: "slot-home",
+    away_slot_id: "slot-away",
+    home_score,
+    away_score,
+    winning_slot_id,
+  };
+}
+
+function pred(
+  predicted_home_score: number,
+  predicted_away_score: number,
+  predicted_winning_slot_id: string | null = null,
+): MatchPrediction {
+  return {
+    predicted_home_score,
+    predicted_away_score,
+    predicted_winning_slot_id,
+  };
+}
+
+describe("computeMatchPoints", () => {
+  it("group: exact score → 3 pts", () => {
+    expect(computeMatchPoints(pred(2, 1), groupMatch("finished", 2, 1))).toBe(3);
+  });
+
+  it("group: outcome correct, score wrong → 1 pt", () => {
+    expect(computeMatchPoints(pred(3, 0), groupMatch("finished", 2, 1))).toBe(1);
+    expect(computeMatchPoints(pred(0, 3), groupMatch("finished", 1, 2))).toBe(1);
+  });
+
+  it("group: predicted tie, actual tie, different score → 1 pt", () => {
+    expect(computeMatchPoints(pred(2, 2), groupMatch("finished", 1, 1))).toBe(1);
+    expect(computeMatchPoints(pred(0, 0), groupMatch("finished", 3, 3))).toBe(1);
+  });
+
+  it("group: outcome wrong → 0 pts", () => {
+    // Predicted home win, actual away win.
+    expect(computeMatchPoints(pred(2, 1), groupMatch("finished", 1, 2))).toBe(0);
+    // Predicted draw, actual home win.
+    expect(computeMatchPoints(pred(1, 1), groupMatch("finished", 2, 1))).toBe(0);
+    // Predicted home win, actual draw.
+    expect(computeMatchPoints(pred(1, 0), groupMatch("finished", 1, 1))).toBe(0);
+  });
+
+  it("knockout: 90+ET score from regulation only — penalty goals never count", () => {
+    // The matches table only stores 90+ET goals (schema § Premise 7).
+    // A 2-2 actual that went to penalties scores fully if user predicted 2-2
+    // AND picked the right penalty winner.
+    const match = knockoutMatch("finished", 2, 2, "slot-home");
+    expect(computeMatchPoints(pred(2, 2, "slot-home"), match)).toBe(3);
+    // Same 2-2 score, but user picked the wrong penalty winner → outcome
+    // wrong → 0 pts (no partial credit for the score in a knockout).
+    expect(computeMatchPoints(pred(2, 2, "slot-away"), match)).toBe(0);
+  });
+
+  it("knockout: outcome scored by slot id, not by score sign", () => {
+    // Actual: home 1, away 0, home advanced.
+    const match = knockoutMatch("finished", 1, 0, "slot-home");
+    // User picked home to win, score wrong → 1 pt.
+    expect(computeMatchPoints(pred(2, 1, "slot-home"), match)).toBe(1);
+    // User picked away → wrong outcome regardless of any matching score
+    // sign assumptions → 0 pts.
+    expect(computeMatchPoints(pred(0, 2, "slot-away"), match)).toBe(0);
+    // Exact score AND correct slot → 3 pts.
+    expect(computeMatchPoints(pred(1, 0, "slot-home"), match)).toBe(3);
+  });
+
+  it("knockout: finished but missing winning_slot_id → null (defensive)", () => {
+    // Invariant violation — a finished knockout must have a winner.
+    // Function returns null rather than guessing.
+    const match = knockoutMatch("finished", 2, 2, null);
+    expect(computeMatchPoints(pred(2, 2, "slot-home"), match)).toBeNull();
+  });
+
+  it("match cancelled → 0 pts (NOT null), so the row gets marked scored", () => {
+    expect(computeMatchPoints(pred(2, 1), groupMatch("cancelled", null, null))).toBe(0);
+    expect(
+      computeMatchPoints(
+        pred(0, 0, "slot-home"),
+        knockoutMatch("cancelled", null, null, null),
+      ),
+    ).toBe(0);
+  });
+
+  it("match status not yet finished → null (don't score)", () => {
+    expect(computeMatchPoints(pred(2, 1), groupMatch("scheduled", null, null))).toBeNull();
+    expect(
+      computeMatchPoints(pred(2, 1), groupMatch("in_progress", 1, 0)),
+    ).toBeNull();
+  });
+
+  it("status finished but scores missing → null (defensive)", () => {
+    // Should never happen for a real finished match, but the guard
+    // protects against partial polling-job writes.
+    expect(computeMatchPoints(pred(2, 1), groupMatch("finished", null, 1))).toBeNull();
+    expect(computeMatchPoints(pred(2, 1), groupMatch("finished", 2, null))).toBeNull();
   });
 });
