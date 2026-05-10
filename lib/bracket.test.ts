@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  computeFinalistPoints,
   computeGroupStandings,
   computeMatchPoints,
   populateR32Slots,
@@ -7,6 +8,8 @@ import {
   GROUP_LETTERS,
   THIRD_PLACE_SLOT_LABELS,
   type ActualMatch,
+  type FinalistPicks,
+  type FinalStandings,
   type GroupStanding,
   type GroupStandings,
   type MatchPrediction,
@@ -551,5 +554,100 @@ describe("computeMatchPoints", () => {
     // protects against partial polling-job writes.
     expect(computeMatchPoints(pred(2, 1), groupMatch("finished", null, 1))).toBeNull();
     expect(computeMatchPoints(pred(2, 1), groupMatch("finished", 2, null))).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------
+// computeFinalistPoints
+// ----------------------------------------------------------------------
+
+function picks(
+  first: string | null,
+  second: string | null,
+  third: string | null,
+): FinalistPicks {
+  return {
+    first_place_team_id: first,
+    second_place_team_id: second,
+    third_place_team_id: third,
+  };
+}
+
+function standings(
+  first: string | null,
+  second: string | null,
+  third: string | null,
+): FinalStandings {
+  return {
+    first_place_team_id: first,
+    second_place_team_id: second,
+    third_place_team_id: third,
+  };
+}
+
+describe("computeFinalistPoints", () => {
+  it("all three correct → 9 pts (5 + 3 + 1)", () => {
+    expect(
+      computeFinalistPoints(
+        picks("ARG", "BRA", "FRA"),
+        standings("ARG", "BRA", "FRA"),
+      ),
+    ).toBe(9);
+  });
+
+  it("champion correct only → 5 pts", () => {
+    expect(
+      computeFinalistPoints(
+        picks("ARG", "GER", "ESP"),
+        standings("ARG", "BRA", "FRA"),
+      ),
+    ).toBe(5);
+  });
+
+  it("champion wrong, 2nd place correct → 3 pts (no chained credit)", () => {
+    // The user picked GER as champion but actual is ARG. Their 2nd-place
+    // pick BRA matches reality. They get 3 pts for 2nd ONLY — no consolation
+    // credit for "champion landed at 2nd".
+    expect(
+      computeFinalistPoints(
+        picks("GER", "BRA", "ESP"),
+        standings("ARG", "BRA", "FRA"),
+      ),
+    ).toBe(3);
+  });
+
+  it("3rd place correct only → 1 pt", () => {
+    expect(
+      computeFinalistPoints(
+        picks("GER", "ESP", "FRA"),
+        standings("ARG", "BRA", "FRA"),
+      ),
+    ).toBe(1);
+  });
+
+  it("all three wrong → 0 pts", () => {
+    expect(
+      computeFinalistPoints(
+        picks("GER", "ESP", "ITA"),
+        standings("ARG", "BRA", "FRA"),
+      ),
+    ).toBe(0);
+  });
+
+  it("standings not yet resolved (nulls) → 0 pts even if user didn't pick", () => {
+    // Pre-Final state. A null=null match must NOT score.
+    expect(
+      computeFinalistPoints(
+        picks(null, null, null),
+        standings(null, null, null),
+      ),
+    ).toBe(0);
+    // Final played but third-place playoff hasn't — Champion/2nd score, 3rd doesn't.
+    expect(
+      computeFinalistPoints(
+        picks("ARG", "BRA", "FRA"),
+        standings("ARG", "BRA", null),
+      ),
+    ).toBe(8);
   });
 });

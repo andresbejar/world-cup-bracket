@@ -447,3 +447,70 @@ function signOf(n: number): -1 | 0 | 1 {
   if (n < 0) return -1;
   return 0;
 }
+
+// ======================================================================
+// Finalist side-bet scoring (Champion / 2nd / 3rd)
+// ======================================================================
+
+/**
+ * The user's tournament-wide podium picks. Independent of the bracket
+ * cascade — a user can predict "Argentina wins it all" here even if
+ * their bracket has Brazil winning the Final. Both bets pay out
+ * independently per design § Scoring.
+ */
+export interface FinalistPicks {
+  first_place_team_id: string | null;
+  second_place_team_id: string | null;
+  third_place_team_id: string | null;
+}
+
+/**
+ * Reality-side podium. Any field is null until that match has finished
+ * (the Final settles 1st + 2nd; the third-place playoff settles 3rd).
+ */
+export interface FinalStandings {
+  first_place_team_id: string | null;
+  second_place_team_id: string | null;
+  third_place_team_id: string | null;
+}
+
+export const FINALIST_POINTS = {
+  first_place: 5,
+  second_place: 3,
+  third_place: 1,
+} as const;
+
+/**
+ * Score the user's three podium picks. Each position is scored
+ * independently — there is no "chained" credit for picking a champion
+ * who actually finished 2nd. A user only earns the 3-point 2nd-place
+ * bonus if their `second_place_team_id` matches the actual runner-up.
+ *
+ * Returns 0 when none match. Safe to call before the Final has finished
+ * — unresolved standings are nulls and never match a non-null pick.
+ */
+export function computeFinalistPoints(
+  picks: FinalistPicks,
+  finalStandings: FinalStandings,
+): number {
+  let total = 0;
+  if (
+    picks.first_place_team_id != null &&
+    picks.first_place_team_id === finalStandings.first_place_team_id
+  ) {
+    total += FINALIST_POINTS.first_place;
+  }
+  if (
+    picks.second_place_team_id != null &&
+    picks.second_place_team_id === finalStandings.second_place_team_id
+  ) {
+    total += FINALIST_POINTS.second_place;
+  }
+  if (
+    picks.third_place_team_id != null &&
+    picks.third_place_team_id === finalStandings.third_place_team_id
+  ) {
+    total += FINALIST_POINTS.third_place;
+  }
+  return total;
+}
