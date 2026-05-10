@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* ============================================================
+   World Cup Bracket — design tokens
+   Source of truth: /DESIGN.md
+   Dark mode primary, no light mode v1.
+   ============================================================ */
+
+:root {
+  /* Surfaces & ink */
+  --bg:           #161616;  /* warm deep charcoal, NOT pure black */
+  --surface:      #1F1F1E;  /* card backgrounds, input cells */
+  --surface-high: #28282A;  /* elevated state, focused inputs, modals */
+  --border:       #2A2A28;  /* subtle warm-grey edges */
+
+  --text-primary: #F5F2EB;  /* warm off-white, NOT pure white */
+  --text-muted:   #8A8580;  /* tertiary info, countdowns */
+  --text-dim:     #5C5853;  /* placeholders, disabled */
+
+  /* Brand & accent */
+  --accent:        #F59E0B;  /* warm amber, used SPARINGLY for active/focus */
+  --accent-muted:  #92400E;  /* accent on dark surface */
+
+  /* Semantic, predicted vs real scoring */
+  --green-correct:  #15803D;  /* mossy. +3 pts (exact score) */
+  --yellow-partial: #A16207;  /* warm gold. +1 pt (outcome only) */
+  --red-wrong:      #B91C1C;  /* deep terracotta. 0 pts (wrong) */
+
+  /* Spacing scale (4px base, comfortable density) */
+  --space-2xs: 4px;
+  --space-xs:  8px;
+  --space-sm:  12px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-4xl: 96px;
+
+  /* Border radius, hierarchical, NOT uniform */
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   8px;
+  --radius-full: 9999px;
+
+  /* Motion */
+  --motion-enter: 150ms ease-out;
+  --motion-exit:  100ms ease-in;
+  --motion-move:  200ms ease-in-out;
+  --motion-micro: 50ms linear;
+}
+
+/* Tailwind 4 theme bridge: expose tokens as Tailwind utilities */
+@theme inline {
+  --color-bg:             var(--bg);
+  --color-surface:        var(--surface);
+  --color-surface-high:   var(--surface-high);
+  --color-border:         var(--border);
+  --color-text-primary:   var(--text-primary);
+  --color-text-muted:     var(--text-muted);
+  --color-text-dim:       var(--text-dim);
+  --color-accent:         var(--accent);
+  --color-accent-muted:   var(--accent-muted);
+  --color-green-correct:  var(--green-correct);
+  --color-yellow-partial: var(--yellow-partial);
+  --color-red-wrong:      var(--red-wrong);
+
+  --font-display: var(--font-instrument-serif), Georgia, serif;
+  --font-sans:    "General Sans", -apple-system, BlinkMacSystemFont, ui-sans-serif, sans-serif;
+  --font-mono:    var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+
+  --radius-sm:    var(--radius-sm);
+  --radius-md:    var(--radius-md);
+  --radius-lg:    var(--radius-lg);
+  --radius-full:  var(--radius-full);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

@@ -49,3 +49,4 @@ next-env.d.ts
 
 # Claude Code local settings (machine-specific, not for commit)
 .claude/settings.local.json
+.gstack/
