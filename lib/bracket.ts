@@ -213,3 +213,137 @@ function resolveTiebreakers(
 function sameH2H(a: H2HStat, b: H2HStat): boolean {
   return a.pts === b.pts && a.gd === b.gd;
 }
+
+// ======================================================================
+// R32 slot population
+// ======================================================================
+
+export const GROUP_LETTERS = [
+  "A", "B", "C", "D", "E", "F",
+  "G", "H", "I", "J", "K", "L",
+] as const;
+
+export type GroupLetter = (typeof GROUP_LETTERS)[number];
+
+export interface GroupStandings {
+  group_letter: GroupLetter;
+  /** Output of computeGroupStandings, ranked. */
+  standings: readonly GroupStanding[];
+}
+
+export interface ThirdPlacePick {
+  /** "best-3rd-1" through "best-3rd-8". */
+  slot_label: string;
+  /** ISO alpha-3 team_id, or null if the user hasn't filled this slot. */
+  team_id: string | null;
+}
+
+export type SlotSource =
+  | "group_winner"
+  | "group_runner_up"
+  | "third_place_pick";
+
+export interface SlotAssignment {
+  slot_label: string;
+  team_id: string | null;
+  source: SlotSource;
+}
+
+export const THIRD_PLACE_SLOT_LABELS = Array.from(
+  { length: 8 },
+  (_, i) => `best-3rd-${i + 1}`,
+) as readonly string[];
+
+/**
+ * Thrown by populateR32Slots when the third-place picks contain the
+ * same team_id in two different slots. The UI prevents duplicates at
+ * input time; this is a server-side defense for malformed payloads.
+ */
+export class DuplicateThirdPlacePickError extends Error {
+  constructor(
+    readonly team_id: string,
+    readonly slot_labels: readonly string[],
+  ) {
+    super(
+      `team_id ${team_id} assigned to multiple third-place slots: ${slot_labels.join(", ")}`,
+    );
+    this.name = "DuplicateThirdPlacePickError";
+  }
+}
+
+/**
+ * Build the 32 R32 slot occupants from a user's predicted group standings
+ * and third-place dropdown picks.
+ *
+ * - 24 deterministic slots: rank 1 of each group → "winner-{X}", rank 2
+ *   → "runner-up-{X}". Pulled straight from the standings; no FIFA map
+ *   knowledge needed here (the R32 *pairings* live in lib/bracket-structure;
+ *   this function only emits slot occupants).
+ * - 8 user-driven slots: third-place picks fill "best-3rd-1" through
+ *   "best-3rd-8". A null team_id (or missing pick) keeps the slot
+ *   unfilled; downstream knockout matches that reference it must show
+ *   a disabled state.
+ *
+ * Throws DuplicateThirdPlacePickError if the same team_id appears in
+ * more than one third-place pick.
+ *
+ * Order of returned slots is deterministic:
+ *   winner-A..L, runner-up-A..L, best-3rd-1..8.
+ */
+export function populateR32Slots(
+  groups: readonly GroupStandings[],
+  thirdPlacePicks: readonly ThirdPlacePick[],
+): SlotAssignment[] {
+  const groupMap = new Map<string, readonly GroupStanding[]>();
+  for (const g of groups) groupMap.set(g.group_letter, g.standings);
+
+  const assignments: SlotAssignment[] = [];
+
+  for (const letter of GROUP_LETTERS) {
+    const standings = groupMap.get(letter);
+    assignments.push({
+      slot_label: `winner-${letter}`,
+      team_id: standings?.find((s) => s.rank === 1)?.team_id ?? null,
+      source: "group_winner",
+    });
+  }
+  for (const letter of GROUP_LETTERS) {
+    const standings = groupMap.get(letter);
+    assignments.push({
+      slot_label: `runner-up-${letter}`,
+      team_id: standings?.find((s) => s.rank === 2)?.team_id ?? null,
+      source: "group_runner_up",
+    });
+  }
+
+  // Third-place picks — keyed by slot_label so caller order doesn't matter.
+  const pickByLabel = new Map<string, string | null>();
+  for (const pick of thirdPlacePicks) {
+    pickByLabel.set(pick.slot_label, pick.team_id);
+  }
+
+  // Detect duplicate team picks across the 8 slots.
+  const slotsByTeam = new Map<string, string[]>();
+  for (const label of THIRD_PLACE_SLOT_LABELS) {
+    const team_id = pickByLabel.get(label);
+    if (team_id == null) continue;
+    const existing = slotsByTeam.get(team_id);
+    if (existing) existing.push(label);
+    else slotsByTeam.set(team_id, [label]);
+  }
+  for (const [team_id, labels] of slotsByTeam) {
+    if (labels.length > 1) {
+      throw new DuplicateThirdPlacePickError(team_id, labels);
+    }
+  }
+
+  for (const label of THIRD_PLACE_SLOT_LABELS) {
+    assignments.push({
+      slot_label: label,
+      team_id: pickByLabel.get(label) ?? null,
+      source: "third_place_pick",
+    });
+  }
+
+  return assignments;
+}

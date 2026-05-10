@@ -3,7 +3,7 @@
 //
 // Pulls live data from api-sports.io for what's available (48 teams + 72
 // group-stage fixtures) and merges with the hand-encoded knockout bracket
-// structure (scripts/bracket-structure.ts).
+// structure (lib/bracket-structure.ts).
 //
 // Output: supabase/seed/fixtures.json
 // Consumed by: scripts/apply-seed.ts (APT-10).
@@ -20,7 +20,7 @@ import { ISO_CODE_BY_APIFOOTBALL_ID } from "./iso-codes.js";
 import {
   ALL_KNOCKOUT_MATCHES,
   KNOCKOUT_SLOT_LABELS,
-} from "./bracket-structure.js";
+} from "../lib/bracket-structure.js";
 
 config({ path: resolve(process.cwd(), ".env.local") });
 
