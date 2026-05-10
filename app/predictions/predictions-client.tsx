@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MatchCard } from "./match-card";
-import { BracketTreeSidebar } from "./bracket-tree-sidebar";
+import { BracketSidebar } from "./bracket-sidebar";
 import type {
   HydratedMatch,
   HydratedPrediction,
@@ -187,7 +187,7 @@ export function PredictionsClient({
             aria-label="Bracket tree"
             className="xl:sticky xl:top-8 xl:self-start"
           >
-            <BracketTreeSidebar
+            <BracketSidebar
               groupTeams={groupTeams}
               groupMatches={groupMatches}
               predictions={predictions}
