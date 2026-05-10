@@ -3,11 +3,13 @@ import {
   computeFinalistPoints,
   computeGroupStandings,
   computeMatchPoints,
+  computeThirdPlacePlacementPoints,
   populateR32Slots,
   DuplicateThirdPlacePickError,
   GROUP_LETTERS,
   THIRD_PLACE_SLOT_LABELS,
   type ActualMatch,
+  type BracketSlot,
   type FinalistPicks,
   type FinalStandings,
   type GroupStanding,
@@ -15,6 +17,7 @@ import {
   type MatchPrediction,
   type MatchScore,
   type MatchStatus,
+  type PredictedThirdPlaceAssignment,
   type Team,
   type ThirdPlacePick,
 } from "./bracket";
@@ -649,5 +652,156 @@ describe("computeFinalistPoints", () => {
         standings("ARG", "BRA", null),
       ),
     ).toBe(8);
+  });
+});
+
+// ----------------------------------------------------------------------
+// computeThirdPlacePlacementPoints
+// ----------------------------------------------------------------------
+
+function thirdPlaceSlots(
+  realByLabel: Record<string, string | null>,
+): BracketSlot[] {
+  // Build a full 8-slot real R32 third-place set, defaulting unspecified
+  // slots to null. Plus a couple of non-third-place slots to verify the
+  // function filters correctly.
+  return [
+    ...THIRD_PLACE_SLOT_LABELS.map((label) => ({
+      slot_label: label,
+      real_team_id: realByLabel[label] ?? null,
+    })),
+    { slot_label: "winner-A", real_team_id: "ARG" },
+    { slot_label: "runner-up-B", real_team_id: "BRA" },
+  ];
+}
+
+function thirdPlacePicks(
+  picksByLabel: Record<string, string | null>,
+): PredictedThirdPlaceAssignment[] {
+  return THIRD_PLACE_SLOT_LABELS.map((label) => ({
+    slot_label: label,
+    team_id: picksByLabel[label] ?? null,
+  }));
+}
+
+describe("computeThirdPlacePlacementPoints", () => {
+  const real = {
+    "best-3rd-1": "TUN",
+    "best-3rd-2": "MEX",
+    "best-3rd-3": "JPN",
+    "best-3rd-4": "ECU",
+    "best-3rd-5": "POL",
+    "best-3rd-6": "USA",
+    "best-3rd-7": "MAR",
+    "best-3rd-8": "CMR",
+  };
+
+  it("all 8 correct → 8 pts", () => {
+    expect(
+      computeThirdPlacePlacementPoints(
+        thirdPlacePicks(real),
+        thirdPlaceSlots(real),
+      ),
+    ).toBe(8);
+  });
+
+  it("all 8 wrong → 0 pts", () => {
+    const allWrong = {
+      "best-3rd-1": "ARG",
+      "best-3rd-2": "BRA",
+      "best-3rd-3": "FRA",
+      "best-3rd-4": "GER",
+      "best-3rd-5": "ESP",
+      "best-3rd-6": "ENG",
+      "best-3rd-7": "ITA",
+      "best-3rd-8": "PRT",
+    };
+    expect(
+      computeThirdPlacePlacementPoints(
+        thirdPlacePicks(allWrong),
+        thirdPlaceSlots(real),
+      ),
+    ).toBe(0);
+  });
+
+  it("partial — 3 of 8 correct → 3 pts", () => {
+    const partial = {
+      "best-3rd-1": "TUN", // ✓
+      "best-3rd-2": "BRA", // ✗
+      "best-3rd-3": "JPN", // ✓
+      "best-3rd-4": "GER", // ✗
+      "best-3rd-5": "ESP", // ✗
+      "best-3rd-6": "USA", // ✓
+      "best-3rd-7": "ITA", // ✗
+      "best-3rd-8": "PRT", // ✗
+    };
+    expect(
+      computeThirdPlacePlacementPoints(
+        thirdPlacePicks(partial),
+        thirdPlaceSlots(real),
+      ),
+    ).toBe(3);
+  });
+
+  it("user picked a team whose group's 3rd-place didn't advance → 0 for that slot", () => {
+    // The user picked PER (Peru) for best-3rd-1, but Peru's group's 3rd-
+    // place team didn't qualify as one of the 8 advancing thirds. Reality
+    // for that slot is TUN — so the slot scores 0. Other slots can still
+    // score normally.
+    const picks = {
+      "best-3rd-1": "PER", // didn't advance → 0
+      "best-3rd-2": "MEX", // ✓
+      "best-3rd-3": "JPN", // ✓
+      "best-3rd-4": "ECU", // ✓
+      "best-3rd-5": "POL", // ✓
+      "best-3rd-6": "USA", // ✓
+      "best-3rd-7": "MAR", // ✓
+      "best-3rd-8": "CMR", // ✓
+    };
+    expect(
+      computeThirdPlacePlacementPoints(
+        thirdPlacePicks(picks),
+        thirdPlaceSlots(real),
+      ),
+    ).toBe(7);
+  });
+
+  it("R32 best-3rd slots not yet populated → returns null", () => {
+    // Group stage hasn't fully settled — best-3rd-7 still null. The
+    // function returns null so the caller doesn't materialize partial
+    // points; running it again later (after the polling job populates
+    // the slot) is idempotent.
+    const partialReal = { ...real, "best-3rd-7": null };
+    expect(
+      computeThirdPlacePlacementPoints(
+        thirdPlacePicks(real),
+        thirdPlaceSlots(partialReal),
+      ),
+    ).toBeNull();
+  });
+
+  it("missing pick (user skipped a slot) → that slot scores 0", () => {
+    const skipped = { ...real, "best-3rd-3": null };
+    expect(
+      computeThirdPlacePlacementPoints(
+        thirdPlacePicks(skipped),
+        thirdPlaceSlots(real),
+      ),
+    ).toBe(7);
+  });
+
+  it("realR32Slots missing some best-3rd slots entirely → null", () => {
+    // The polling job upserted only 5 of the 8 best-3rd slots so far.
+    // Treat as not-yet-ready.
+    const slots: BracketSlot[] = [
+      { slot_label: "best-3rd-1", real_team_id: "TUN" },
+      { slot_label: "best-3rd-2", real_team_id: "MEX" },
+      { slot_label: "best-3rd-3", real_team_id: "JPN" },
+      { slot_label: "best-3rd-4", real_team_id: "ECU" },
+      { slot_label: "best-3rd-5", real_team_id: "POL" },
+    ];
+    expect(
+      computeThirdPlacePlacementPoints(thirdPlacePicks(real), slots),
+    ).toBeNull();
   });
 });

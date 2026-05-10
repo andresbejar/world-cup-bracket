@@ -514,3 +514,68 @@ export function computeFinalistPoints(
   }
   return total;
 }
+
+// ======================================================================
+// Third-place R32 slot placement scoring (the FIFA-literacy bet)
+// ======================================================================
+
+export interface PredictedThirdPlaceAssignment {
+  /** "best-3rd-1" .. "best-3rd-8". */
+  slot_label: string;
+  /** Team_id the user thinks FIFA will place in this slot. */
+  team_id: string | null;
+}
+
+export interface BracketSlot {
+  slot_label: string;
+  /** Team_id FIFA actually placed here, or null if upstream not done. */
+  real_team_id: string | null;
+}
+
+/**
+ * Score the user's 8 third-place R32 slot picks against reality. Each
+ * correct slot is worth 1 pt (max 8). A pick is "correct" only if the
+ * team_id the user assigned to a given slot literally equals the team
+ * FIFA placed in that slot once group stage completes — picking a team
+ * whose group didn't qualify a 3rd-place team means that team can't be
+ * in any best-3rd slot, so it scores 0 there. No partial credit.
+ *
+ * Returns null when any of the 8 third-place R32 slots is still
+ * unpopulated (real_team_id null). Group stage settles all 8 in one
+ * shot, so partial-population means the polling job is mid-flight and
+ * we shouldn't score yet.
+ *
+ * `realR32Slots` may include the full 32-slot R32 set; the function
+ * filters to the 8 third-place ones.
+ */
+export function computeThirdPlacePlacementPoints(
+  predictedAssignments: readonly PredictedThirdPlaceAssignment[],
+  realR32Slots: readonly BracketSlot[],
+): number | null {
+  const thirdPlaceSet = new Set<string>(THIRD_PLACE_SLOT_LABELS);
+  const realByLabel = new Map<string, string | null>();
+  for (const slot of realR32Slots) {
+    if (thirdPlaceSet.has(slot.slot_label)) {
+      realByLabel.set(slot.slot_label, slot.real_team_id);
+    }
+  }
+
+  // Group stage finishes all 8 best-3rd slots at once. If any are
+  // still null, the polling job hasn't finished settling group stage —
+  // return null so the caller knows not to materialize points yet.
+  for (const label of THIRD_PLACE_SLOT_LABELS) {
+    if (realByLabel.get(label) == null) return null;
+  }
+
+  const pickByLabel = new Map<string, string | null>();
+  for (const p of predictedAssignments) {
+    pickByLabel.set(p.slot_label, p.team_id);
+  }
+
+  let total = 0;
+  for (const label of THIRD_PLACE_SLOT_LABELS) {
+    const pick = pickByLabel.get(label);
+    if (pick != null && pick === realByLabel.get(label)) total += 1;
+  }
+  return total;
+}
