@@ -16,11 +16,14 @@ name: Poll match results
 #                        in workflow logs for debugging)
 
 on:
-  schedule:
-    # Every hour at :00 UTC. GitHub Actions cron runs in UTC.
-    # Note: GH Actions schedules can drift up to ~15 min during peak load,
-    # which is fine for our 30-second-leaderboard-polling UX.
-    - cron: '0 * * * *'
+  # Schedule is COMMENTED OUT until APT-26 / APT-27 land the API route and
+  # CRON_SECRET / PROD_URL are configured. Re-enable when ready by removing
+  # the leading '#' on the two cron lines below.
+  # schedule:
+  #   # Every hour at :00 UTC. GitHub Actions cron runs in UTC.
+  #   # Note: GH Actions schedules can drift up to ~15 min during peak load,
+  #   # which is fine for our 30-second-leaderboard-polling UX.
+  #   - cron: '0 * * * *'
 
   # Manual trigger for testing or one-off catch-up runs after an outage.
   workflow_dispatch:
