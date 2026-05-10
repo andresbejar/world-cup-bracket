@@ -1,0 +1,67 @@
+name: Poll match results
+
+# Hourly trigger that hits the Next.js API route to fetch fresh results from
+# api-sports.io and run scoring on any matches that just finished.
+#
+# Why GitHub Actions instead of Vercel Cron:
+#   Vercel Hobby plan is capped at one cron run per day (verified APT-3,
+#   2026-05-09). Pro plan ($20/month) is overkill for a ~2-month hobby.
+#   GitHub Actions free tier covers ~2000 min/month; hourly runs of a
+#   <30s job use ~360 min/month.
+#
+# Required GitHub secrets (set via: gh secret set <NAME>):
+#   CRON_SECRET      — shared secret the API route validates before running
+#   PROD_URL         — production base URL, e.g. https://example.vercel.app
+#                       (set as a repo VARIABLE, not a secret, so it's visible
+#                        in workflow logs for debugging)
+
+on:
+  schedule:
+    # Every hour at :00 UTC. GitHub Actions cron runs in UTC.
+    # Note: GH Actions schedules can drift up to ~15 min during peak load,
+    # which is fine for our 30-second-leaderboard-polling UX.
+    - cron: '0 * * * *'
+
+  # Manual trigger for testing or one-off catch-up runs after an outage.
+  workflow_dispatch:
+
+# Cancel in-flight runs if a new one starts (avoid double-scoring during catch-up).
+concurrency:
+  group: poll-results
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hit /api/cron/poll-results
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PROD_URL: ${{ vars.PROD_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$PROD_URL" ]; then
+            echo "ERROR: CRON_SECRET or PROD_URL is not configured." >&2
+            echo "Set them with:" >&2
+            echo "  gh secret set CRON_SECRET" >&2
+            echo "  gh variable set PROD_URL" >&2
+            exit 1
+          fi
+
+          # Capture status + body separately so we can fail loudly on non-2xx.
+          response=$(curl -sS -w "\n%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$PROD_URL/api/cron/poll-results")
+
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "Status: $status"
+          echo "Body: $body"
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "ERROR: poll-results returned non-2xx status." >&2
+            exit 1
+          fi

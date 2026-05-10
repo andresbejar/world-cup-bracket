@@ -274,9 +274,9 @@ Once a match finishes:
 - The bracket diagram populates with actual teams as games complete, with the user's prediction shown as a smaller annotation on each match card.
 - **Leaderboard refresh:** the leaderboard page polls every 30 seconds when open (simple `setInterval` + revalidate). Supabase Realtime is overkill for ~50 users and adds a moving part — defer it.
 
-### Polling Job (Vercel Cron)
+### Polling Job (GitHub Actions scheduled workflow)
 
-- **Cadence:** every hour during match days, but **verify Vercel Hobby plan cron limits in week 1** — recent tier changes may cap free-tier crons at daily-only. If so, fall back to GitHub Actions scheduled workflow (free, no per-minute limit) hitting a Next.js API route, or run it from a Supabase Edge Function on a schedule.
+- **Cadence:** hourly during match days. **Verified APT-3 (2026-05-09): Vercel Hobby cron is daily-only** (deployment fails on `0 * * * *` with `"Hobby accounts are limited to daily cron jobs"`). Pro plan ($20/month) is overkill for a 2-month hobby. Decision: **GitHub Actions scheduled workflow** (`.github/workflows/poll-results.yml`) hits a Next.js API route at `/api/cron/poll-results` hourly, with a shared secret in the `Authorization` header. Free tier covers 2000 min/month — hourly polling uses ~360 min/month, well under the cap.
 - **Job:** fetch results for all World Cup matches from api-football. Upsert into `matches` (scores, status). Once group stage finishes, also write `real_team_id` onto the 32 R32 `bracket_slots`.
 - **Note:** fixtures are NOT pulled from api-football — they're hand-curated and seeded before launch (premise 1). API is results-only.
 - For any match whose status just flipped to `finished`: trigger scoring for all predictions on that match.
