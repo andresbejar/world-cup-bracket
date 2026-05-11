@@ -4,22 +4,28 @@ import { useState } from "react";
 import { ScoreInput } from "./score-input";
 import type { HydratedKnockoutMatch } from "@/lib/group-data";
 
-// Knockout match card. Like the group MatchCard, with two key differences:
-//   1. The two teams aren't fixed — they cascade from upstream predictions
-//      and may be unknown ("—") until the user picks earlier rounds.
-//   2. There are two winner-pick pills under the score; the user MUST
-//      pick a slot to advance (knockout outcomes can't be tied). The
-//      pill state drives `predicted_winning_slot_id` in the API payload.
+// Knockout match card. Mirrors the group MatchCard layout but with two
+// crucial differences driven by the no-ties-in-knockout-outcomes rule:
 //
-// Disabled state: if either home or away team is unresolved (cascade
-// upstream missing a prediction), the score inputs and winner pills
-// disable. The user has to fill in earlier rounds first.
+//   1. The two teams aren't fixed — they cascade from upstream
+//      predictions and may be unresolved ("—") until earlier rounds
+//      are picked. Score inputs disable in that state.
+//
+//   2. Winner derivation is automatic when the score isn't tied: the
+//      side with more goals advances and `predicted_winning_slot_id`
+//      is auto-set. When the user enters a tied score (e.g. 2-2),
+//      the canonical 90+ET tie is resolved by penalties in real
+//      football — so the card surfaces an inline penalty-winner
+//      picker with two pill-radios. The user must pick one. (APT-21)
 
 interface Props {
   match: HydratedKnockoutMatch;
   /** Resolved team codes from the cascade. Null when upstream isn't predicted yet. */
   homeTeam: string | null;
   awayTeam: string | null;
+  /** Full team names if available — used in the penalty pill labels. */
+  homeName: string | null;
+  awayName: string | null;
   homeScore: number | null;
   awayScore: number | null;
   /** Currently-picked slot id (winner). Either home_slot_id, away_slot_id, or null. */
@@ -36,6 +42,8 @@ export function KnockoutCard({
   match,
   homeTeam,
   awayTeam,
+  homeName,
+  awayName,
   homeScore,
   awayScore,
   predictedWinnerSlotId,
@@ -44,8 +52,24 @@ export function KnockoutCard({
 }: Props) {
   const [focused, setFocused] = useState(false);
   const ready = homeTeam != null && awayTeam != null;
+  const hasScore = homeScore != null && awayScore != null;
+  const tied = hasScore && homeScore === awayScore;
   const filled =
-    homeScore != null && awayScore != null && predictedWinnerSlotId != null;
+    hasScore &&
+    predictedWinnerSlotId != null &&
+    // Tied state requires an explicit penalty pick; non-tied state
+    // auto-derives, so "filled" === any winner set.
+    (!tied || predictedWinnerSlotId !== null);
+
+  // Compute the auto-derived winner from a candidate score. Used by the
+  // score inputs so changing a score updates the winner side at the same
+  // beat — no laggy effects, no infinite-loop risk.
+  const autoWinner = (h: number, a: number): string | null => {
+    if (h > a) return match.home_slot_id;
+    if (a > h) return match.away_slot_id;
+    // Tied: keep the user's current pick (or null on first entry).
+    return predictedWinnerSlotId;
+  };
 
   return (
     <article
@@ -75,58 +99,57 @@ export function KnockoutCard({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <KnockoutTeamRow team={homeTeam} />
-          <KnockoutTeamRow team={awayTeam} />
+          <KnockoutTeamRow team={homeTeam} name={homeName} />
+          <KnockoutTeamRow team={awayTeam} name={awayName} />
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          <ScoreInput
-            value={homeScore ?? 0}
-            onChange={(n) =>
-              ready &&
-              onChange(n, awayScore ?? 0, predictedWinnerSlotId)
-            }
-            ariaLabel="Home score"
-          />
-          <span className="font-mono text-xs text-text-dim">:</span>
-          <ScoreInput
-            value={awayScore ?? 0}
-            onChange={(n) =>
-              ready &&
-              onChange(homeScore ?? 0, n, predictedWinnerSlotId)
-            }
-            ariaLabel="Away score"
+        <div className="flex flex-col items-end gap-1.5 self-end sm:self-auto">
+          <div className="flex items-center gap-2">
+            <ScoreInput
+              value={homeScore ?? 0}
+              onChange={(n) => {
+                if (!ready) return;
+                const a = awayScore ?? 0;
+                onChange(n, a, autoWinner(n, a));
+              }}
+              ariaLabel="Home score"
+            />
+            <span className="font-mono text-xs text-text-dim">:</span>
+            <ScoreInput
+              value={awayScore ?? 0}
+              onChange={(n) => {
+                if (!ready) return;
+                const h = homeScore ?? 0;
+                onChange(h, n, autoWinner(h, n));
+              }}
+              ariaLabel="Away score"
+            />
+          </div>
+          <SaveStatusLabel
+            status={saveStatus}
+            ready={ready}
+            filled={filled}
           />
         </div>
       </div>
 
-      {/* Winner picker — two pills. User must pick a slot to advance. */}
-      <div className="flex items-center gap-2">
-        <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-muted">
-          Advances:
-        </p>
-        <WinnerPill
-          team={homeTeam}
-          selected={predictedWinnerSlotId === match.home_slot_id}
-          disabled={!ready}
-          onClick={() =>
-            ready &&
-            onChange(homeScore ?? 0, awayScore ?? 0, match.home_slot_id)
+      {tied && ready ? (
+        <PenaltyPicker
+          homeTeam={homeTeam}
+          homeName={homeName}
+          awayTeam={awayTeam}
+          awayName={awayName}
+          homeSelected={predictedWinnerSlotId === match.home_slot_id}
+          awaySelected={predictedWinnerSlotId === match.away_slot_id}
+          onPick={(side) =>
+            onChange(
+              homeScore!,
+              awayScore!,
+              side === "home" ? match.home_slot_id : match.away_slot_id,
+            )
           }
         />
-        <WinnerPill
-          team={awayTeam}
-          selected={predictedWinnerSlotId === match.away_slot_id}
-          disabled={!ready}
-          onClick={() =>
-            ready &&
-            onChange(homeScore ?? 0, awayScore ?? 0, match.away_slot_id)
-          }
-        />
-        <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em]">
-          <SaveStatus status={saveStatus} ready={ready} filled={filled} />
-        </span>
-      </div>
+      ) : null}
 
       {!ready ? (
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
@@ -137,17 +160,25 @@ export function KnockoutCard({
   );
 }
 
-function KnockoutTeamRow({ team }: { team: string | null }) {
+function KnockoutTeamRow({
+  team,
+  name,
+}: {
+  team: string | null;
+  name: string | null;
+}) {
   return (
     <div className="flex items-center gap-3">
-      <div
-        aria-hidden
-        className="h-5 w-7 rounded-sm bg-surface-high"
-      />
+      <div aria-hidden className="h-5 w-7 rounded-sm bg-surface-high" />
       {team ? (
-        <span className="font-mono text-sm font-bold uppercase tracking-[0.06em] text-text-primary">
-          {team}
-        </span>
+        <>
+          <span className="font-mono text-sm font-bold uppercase tracking-[0.06em] text-text-primary">
+            {team}
+          </span>
+          {name ? (
+            <span className="truncate text-sm text-text-muted">{name}</span>
+          ) : null}
+        </>
       ) : (
         <span className="font-mono text-sm uppercase tracking-[0.06em] text-text-dim">
           —
@@ -157,36 +188,83 @@ function KnockoutTeamRow({ team }: { team: string | null }) {
   );
 }
 
-function WinnerPill({
+function PenaltyPicker({
+  homeTeam,
+  homeName,
+  awayTeam,
+  awayName,
+  homeSelected,
+  awaySelected,
+  onPick,
+}: {
+  homeTeam: string | null;
+  homeName: string | null;
+  awayTeam: string | null;
+  awayName: string | null;
+  homeSelected: boolean;
+  awaySelected: boolean;
+  onPick: (side: "home" | "away") => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Penalty-shootout winner"
+      className="flex flex-wrap items-center gap-3 border-t border-dashed border-border pt-3"
+    >
+      <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted">
+        Tied at 90+ET · penalty winner
+      </span>
+      <PenaltyPill
+        team={homeTeam}
+        name={homeName}
+        selected={homeSelected}
+        onClick={() => onPick("home")}
+      />
+      <PenaltyPill
+        team={awayTeam}
+        name={awayName}
+        selected={awaySelected}
+        onClick={() => onPick("away")}
+      />
+      <span className="ml-auto font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted">
+        +1 PT IF CORRECT
+      </span>
+    </div>
+  );
+}
+
+function PenaltyPill({
   team,
+  name,
   selected,
-  disabled,
   onClick,
 }: {
   team: string | null;
+  name: string | null;
   selected: boolean;
-  disabled: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       aria-pressed={selected}
+      role="radio"
+      aria-checked={selected}
       className={
-        "rounded-full border px-3 py-1 font-mono text-[11px] font-bold uppercase tracking-[0.06em] transition-colors duration-[var(--motion-micro)] disabled:opacity-40 " +
+        "rounded-full border px-3 py-1 font-mono text-xs font-medium tracking-[0.04em] transition-colors duration-[var(--motion-micro)] " +
         (selected
           ? "border-accent bg-accent text-bg"
-          : "border-border bg-surface-high text-text-primary hover:border-accent-muted")
+          : "border-border bg-surface-high text-text-muted hover:text-text-primary")
       }
     >
       {team ?? "—"}
+      {name ? <span className="ml-1.5 normal-case">· {name}</span> : null}
     </button>
   );
 }
 
-function SaveStatus({
+function SaveStatusLabel({
   status,
   ready,
   filled,
@@ -196,11 +274,34 @@ function SaveStatus({
   filled: boolean;
 }) {
   if (!ready)
-    return <span className="text-text-dim">locked</span>;
-  if (status === "saving") return <span className="text-text-muted">saving…</span>;
-  if (status === "saved") return <span className="text-green-correct">saved</span>;
-  if (status === "error") return <span className="text-red-wrong">retry</span>;
-  return <span className="text-text-dim">{filled ? "saved" : "—"}</span>;
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+        locked
+      </span>
+    );
+  if (status === "saving")
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-muted">
+        saving…
+      </span>
+    );
+  if (status === "saved")
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-green-correct">
+        saved
+      </span>
+    );
+  if (status === "error")
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-red-wrong">
+        retry
+      </span>
+    );
+  return (
+    <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+      {filled ? "saved" : "—"}
+    </span>
+  );
 }
 
 function roundLabel(roundId: string): string {

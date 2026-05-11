@@ -313,8 +313,12 @@ export function PredictionsClient({
     () => new Map(groupTeams.map((t) => [t.id, t.code])),
     [groupTeams],
   );
+  const teamNameById = useMemo(
+    () => new Map(groupTeams.map((t) => [t.id, t.name])),
+    [groupTeams],
+  );
 
-  // Resolve a slot_label → team code through the cascade + team registry.
+  // Resolve a slot_label → team code / name through the cascade + team registry.
   const teamCodeAtLabel = useCallback(
     (label: string): string | null => {
       const teamId = slotMap.get(label);
@@ -322,6 +326,14 @@ export function PredictionsClient({
       return teamCodeById.get(teamId) ?? teamId;
     },
     [slotMap, teamCodeById],
+  );
+  const teamNameAtLabel = useCallback(
+    (label: string): string | null => {
+      const teamId = slotMap.get(label);
+      if (!teamId) return null;
+      return teamNameById.get(teamId) ?? null;
+    },
+    [slotMap, teamNameById],
   );
 
   const groupMatchesByRound = useMemo(() => {
@@ -405,6 +417,8 @@ export function PredictionsClient({
                         match={match}
                         homeTeam={teamCodeAtLabel(match.home_slot_label)}
                         awayTeam={teamCodeAtLabel(match.away_slot_label)}
+                        homeName={teamNameAtLabel(match.home_slot_label)}
+                        awayName={teamNameAtLabel(match.away_slot_label)}
                         homeScore={state?.home ?? null}
                         awayScore={state?.away ?? null}
                         predictedWinnerSlotId={state?.winner ?? null}
