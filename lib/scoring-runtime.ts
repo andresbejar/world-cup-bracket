@@ -11,7 +11,13 @@ import {
   planMatchScoring,
   type ScorablePrediction,
 } from "./scoring";
-import type { ActualMatch } from "./bracket";
+import {
+  computeThirdPlacePlacementPoints,
+  THIRD_PLACE_SLOT_LABELS,
+  type ActualMatch,
+  type BracketSlot,
+  type PredictedThirdPlaceAssignment,
+} from "./bracket";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ScoreMatchOutcome =
@@ -168,11 +174,67 @@ async function recomputeUserTotal(
   const finalistTotal =
     (finalistRow?.points_awarded as number | null | undefined) ?? 0;
 
-  const total = predTotal + finalistTotal;
+  // Third-place placement bonus: computed dynamically from user picks +
+  // real best-3rd slot occupants. Returns null when group stage hasn't
+  // fully settled — in that case the bonus contributes 0.
+  const thirdPlaceBonus = await computeThirdPlaceBonus(supabase, user_id);
+  if (thirdPlaceBonus.ok === false) {
+    return { ok: false, reason: thirdPlaceBonus.reason };
+  }
+
+  const total = predTotal + finalistTotal + thirdPlaceBonus.value;
   const { error: updateErr } = await supabase
     .from("users")
     .update({ total_points: total })
     .eq("id", user_id);
   if (updateErr) return { ok: false, reason: updateErr.message };
   return { ok: true };
+}
+
+async function computeThirdPlaceBonus(
+  supabase: SupabaseClient,
+  user_id: string,
+): Promise<{ ok: true; value: number } | { ok: false; reason: string }> {
+  // The 8 R32 best-3rd slots. real_team_id is null until the polling
+  // job (or admin) populates them post-group-stage.
+  const { data: realSlots, error: slotErr } = await supabase
+    .from("bracket_slots")
+    .select("slot_label, real_team_id")
+    .in("slot_label", [...THIRD_PLACE_SLOT_LABELS]);
+  if (slotErr) return { ok: false, reason: slotErr.message };
+
+  const { data: picks, error: picksErr } = await supabase
+    .from("predicted_third_place_assignments")
+    .select("slot_id, predicted_team_id")
+    .eq("user_id", user_id);
+  if (picksErr) return { ok: false, reason: picksErr.message };
+
+  // The picks reference bracket_slot.id; resolve back to slot_label for
+  // the pure scorer. We pull this lookup from the realSlots query above
+  // — but those are queried by slot_label, not id. Pull the id→label
+  // map for the 8 third-place slots in one shot.
+  const { data: thirdPlaceSlotIds, error: idsErr } = await supabase
+    .from("bracket_slots")
+    .select("id, slot_label")
+    .in("slot_label", [...THIRD_PLACE_SLOT_LABELS]);
+  if (idsErr) return { ok: false, reason: idsErr.message };
+  const labelById = new Map<string, string>();
+  for (const s of thirdPlaceSlotIds ?? []) {
+    labelById.set(s.id as string, s.slot_label as string);
+  }
+
+  const assignments: PredictedThirdPlaceAssignment[] = (picks ?? []).map(
+    (p) => ({
+      slot_label:
+        labelById.get(p.slot_id as string) ?? (p.slot_id as string),
+      team_id: p.predicted_team_id as string,
+    }),
+  );
+  const slotsForScorer: BracketSlot[] = (realSlots ?? []).map((s) => ({
+    slot_label: s.slot_label as string,
+    real_team_id: (s.real_team_id as string | null) ?? null,
+  }));
+
+  const pts = computeThirdPlacePlacementPoints(assignments, slotsForScorer);
+  return { ok: true, value: pts ?? 0 };
 }
