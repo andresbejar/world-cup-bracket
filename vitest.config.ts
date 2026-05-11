@@ -6,11 +6,16 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["lib/bracket.ts", "lib/lock-check.ts"],
+      include: [
+        "lib/bracket.ts",
+        "lib/lock-check.ts",
+        "lib/apifootball.ts",
+      ],
       thresholds: {
         // CLAUDE.md mandates 100% on lib/bracket.ts — a bug here corrupts
         // every user's bracket. lib/lock-check.ts gates every write API,
-        // so it sits at the same 100% bar.
+        // and lib/apifootball.ts is the only thing standing between the
+        // upstream feed and our scoring engine — all held to the same bar.
         lines: 100,
         functions: 100,
         branches: 100,
