@@ -10,6 +10,7 @@ export default defineConfig({
         "lib/bracket.ts",
         "lib/lock-check.ts",
         "lib/apifootball.ts",
+        "lib/scoring.ts",
       ],
       thresholds: {
         // CLAUDE.md mandates 100% on lib/bracket.ts — a bug here corrupts
