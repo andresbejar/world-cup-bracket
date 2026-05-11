@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { checkFinalistLock } from "@/lib/lock-check";
 
 // POST /api/finalist-picks
 // Body: { first_place_team_id, second_place_team_id, third_place_team_id }
 // Each field is either a team_id string or null. One row per user;
 // upsert keyed on user_id.
 //
-// Lock deadline (first match kickoff) enforcement is APT-24's scope.
-// RLS is the safety net.
+// Finalist picks lock at first-match-kickoff (NOT 4hr-pre), per design
+// doc § Scoring (Tournament-wide bets).
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -26,6 +27,29 @@ export async function POST(request: NextRequest) {
   const parsed = parseBody(body);
   if ("error" in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  // Look up the first match kickoff to determine if finalist picks
+  // are still open.
+  const { data: firstMatch, error: firstErr } = await supabase
+    .from("matches")
+    .select("scheduled_at")
+    .order("scheduled_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (firstErr) {
+    console.error("[api/finalist-picks] first-match lookup failed:", firstErr);
+    return NextResponse.json({ error: firstErr.message }, { status: 500 });
+  }
+  const lock = checkFinalistLock(firstMatch?.scheduled_at ?? null, Date.now());
+  if (!lock.editable) {
+    return NextResponse.json(
+      {
+        error: "the tournament has started — finalist picks are frozen",
+        reason: lock.reason,
+      },
+      { status: 403 },
+    );
   }
 
   const { error } = await supabase.from("finalist_picks").upsert(

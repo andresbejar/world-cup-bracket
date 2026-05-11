@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { checkRoundLock } from "@/lib/lock-check";
 
 // POST /api/third-place-assignments
 // Body: { slot_id: string; team_id: string | null }
@@ -7,8 +8,9 @@ import { createClient } from "@/lib/supabase/server";
 // team_id !== null → upsert on (user_id, slot_id)
 // team_id === null → delete the row (user is clearing their pick)
 //
-// Lock enforcement is APT-24's scope. RLS catches direct-from-client
-// writes via the round-deadline check on the R32 round.
+// Third-place picks lock at R32's deadline (4hr before R32 starts) —
+// after that, FIFA has settled which group's third-place team lands
+// where and the bet is decided.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -27,6 +29,36 @@ export async function POST(request: NextRequest) {
   const parsed = parseBody(body);
   if ("error" in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  // Third-place picks are gated by the R32 round's lock state.
+  const { data: round, error: roundErr } = await supabase
+    .from("rounds")
+    .select("locked_at, deadline_at")
+    .eq("id", "r32")
+    .maybeSingle();
+  if (roundErr) {
+    console.error("[api/third-place-assignments] round lookup failed:", roundErr);
+    return NextResponse.json({ error: roundErr.message }, { status: 500 });
+  }
+  if (!round) {
+    return NextResponse.json(
+      { error: "R32 round not configured" },
+      { status: 500 },
+    );
+  }
+  const lock = checkRoundLock(round, Date.now());
+  if (!lock.editable) {
+    return NextResponse.json(
+      {
+        error:
+          lock.reason === "locked"
+            ? "third-place picks are locked — admin closed predictions"
+            : "third-place picks lock at R32's deadline — too late to change",
+        reason: lock.reason,
+      },
+      { status: 403 },
+    );
   }
 
   if (parsed.team_id == null) {

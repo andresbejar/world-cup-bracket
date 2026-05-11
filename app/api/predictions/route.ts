@@ -1,14 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import {
+  checkRoundLock,
+  validateKnockoutPrediction,
+} from "@/lib/lock-check";
 
 // POST /api/predictions
 // Body: { match_id, predicted_home_score, predicted_away_score,
 //         predicted_winning_slot_id? }
 // Upserts on (user_id, match_id).
 //
-// NOTE: Server-side lock enforcement (rejecting writes after a round's
-// deadline) is APT-24's scope. RLS catches direct-from-client writes
-// in the meantime; this route trusts authenticated callers until then.
+// Source of truth for lock enforcement (design doc § Lock Enforcement
+// Architecture). Supabase RLS mirrors these checks as a safety net.
+// We always operate as the authenticated user, never service-role,
+// so RLS still applies even if our checks miss something.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -27,6 +32,59 @@ export async function POST(request: NextRequest) {
   const parsed = parseBody(body);
   if ("error" in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  // Look up the match → its round so we can both lock-check and
+  // tie-validate. One join via Supabase REST; trivial overhead.
+  const { data: match, error: matchErr } = await supabase
+    .from("matches")
+    .select("id, round_id, rounds(stage, locked_at, deadline_at)")
+    .eq("id", parsed.match_id)
+    .maybeSingle();
+  if (matchErr) {
+    console.error("[api/predictions] match lookup failed:", matchErr);
+    return NextResponse.json({ error: matchErr.message }, { status: 500 });
+  }
+  if (!match) {
+    return NextResponse.json({ error: "unknown match_id" }, { status: 404 });
+  }
+
+  // Supabase types the joined relation either as a single object or as
+  // an array; normalize.
+  const round = Array.isArray(match.rounds) ? match.rounds[0] : match.rounds;
+  if (!round) {
+    return NextResponse.json(
+      { error: "match has no associated round" },
+      { status: 500 },
+    );
+  }
+
+  const lock = checkRoundLock(
+    { locked_at: round.locked_at, deadline_at: round.deadline_at },
+    Date.now(),
+  );
+  if (!lock.editable) {
+    return NextResponse.json(
+      {
+        error:
+          lock.reason === "locked"
+            ? "round is locked — admin closed predictions"
+            : "round deadline has passed — predictions for this round are frozen",
+        reason: lock.reason,
+      },
+      { status: 403 },
+    );
+  }
+
+  const stage: "group" | "knockout" = round.stage === "group" ? "group" : "knockout";
+  const tieCheck = validateKnockoutPrediction({
+    stage,
+    home_score: parsed.predicted_home_score,
+    away_score: parsed.predicted_away_score,
+    predicted_winning_slot_id: parsed.predicted_winning_slot_id,
+  });
+  if (!tieCheck.ok) {
+    return NextResponse.json({ error: tieCheck.error }, { status: 400 });
   }
 
   const { error } = await supabase.from("predictions").upsert(
