@@ -70,12 +70,18 @@ export interface HydratedPrediction {
   predicted_winning_slot_id: string | null;
 }
 
+export interface HydratedThirdPlacePick {
+  slot_id: string;        // bracket_slot.id, e.g. "r32-best-3rd-3"
+  predicted_team_id: string;
+}
+
 export interface PredictionWorkspaceData {
   rounds: HydratedRound[];
   groupTeams: HydratedTeam[];
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
   predictions: HydratedPrediction[];
+  thirdPlacePicks: HydratedThirdPlacePick[];
   /** bracket_slot.id → bracket_slot.slot_label, for resolving predicted_winning_slot_id. */
   slotLabelById: Record<string, string>;
 }
@@ -91,6 +97,7 @@ export async function loadPredictionWorkspace(
     { data: slots, error: slotsErr },
     { data: matches, error: matchesErr },
     { data: predictions, error: predErr },
+    { data: thirdPlace, error: thirdPlaceErr },
   ] = await Promise.all([
     supabase
       .from("rounds")
@@ -114,6 +121,10 @@ export async function loadPredictionWorkspace(
         "match_id, predicted_home_score, predicted_away_score, predicted_winning_slot_id",
       )
       .eq("user_id", user_id),
+    supabase
+      .from("predicted_third_place_assignments")
+      .select("slot_id, predicted_team_id")
+      .eq("user_id", user_id),
   ]);
 
   if (roundsErr) throw roundsErr;
@@ -121,6 +132,7 @@ export async function loadPredictionWorkspace(
   if (slotsErr) throw slotsErr;
   if (matchesErr) throw matchesErr;
   if (predErr) throw predErr;
+  if (thirdPlaceErr) throw thirdPlaceErr;
 
   const teamById = new Map<string, HydratedTeam>(
     (teams ?? []).map((t) => [
@@ -191,6 +203,7 @@ export async function loadPredictionWorkspace(
     groupMatches,
     knockoutMatches,
     predictions: predictions ?? [],
+    thirdPlacePicks: thirdPlace ?? [],
     slotLabelById,
   };
 }

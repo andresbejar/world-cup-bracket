@@ -11,16 +11,19 @@ import {
 import { MatchCard } from "./match-card";
 import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
+import { ThirdPlaceCluster } from "./third-place-cluster";
 import {
   computeGroupStandings,
   computeKnockoutCascade,
   GROUP_LETTERS,
   populateR32Slots,
+  THIRD_PLACE_SLOT_LABELS,
   type GroupStandings,
   type KnockoutMatchPrediction,
   type KnockoutRoundId,
   type MatchScore,
   type Team,
+  type ThirdPlacePick,
 } from "@/lib/bracket";
 import type {
   HydratedKnockoutMatch,
@@ -28,6 +31,7 @@ import type {
   HydratedPrediction,
   HydratedRound,
   HydratedTeam,
+  HydratedThirdPlacePick,
 } from "@/lib/group-data";
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -38,6 +42,7 @@ interface Props {
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
   initialPredictions: HydratedPrediction[];
+  initialThirdPlacePicks: HydratedThirdPlacePick[];
   slotLabelById: Record<string, string>;
 }
 
@@ -56,6 +61,7 @@ export function PredictionsClient({
   groupMatches,
   knockoutMatches,
   initialPredictions,
+  initialThirdPlacePicks,
   slotLabelById,
 }: Props) {
   const [activeRoundId, setActiveRoundId] = useState<string>(
@@ -79,6 +85,21 @@ export function PredictionsClient({
   const [saveStatus, setSaveStatus] = useState<Map<string, SaveStatus>>(
     new Map(),
   );
+
+  // Third-place picks: slot_id → predicted team_id. Saved separately via
+  // /api/third-place-assignments (different schema + different RLS check).
+  const [thirdPlacePicks, setThirdPlacePicks] = useState<Map<string, string>>(
+    () => {
+      const m = new Map<string, string>();
+      for (const p of initialThirdPlacePicks) {
+        m.set(p.slot_id, p.predicted_team_id);
+      }
+      return m;
+    },
+  );
+  const [thirdPlaceSaveStatus, setThirdPlaceSaveStatus] = useState<
+    Map<string, SaveStatus>
+  >(new Map());
 
   const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
@@ -112,6 +133,45 @@ export function PredictionsClient({
       }
     },
     [],
+  );
+
+  const flushThirdPlaceSave = useCallback(
+    async (slot_id: string, team_id: string | null) => {
+      setThirdPlaceSaveStatus((s) => new Map(s).set(slot_id, "saving"));
+      try {
+        const res = await fetch("/api/third-place-assignments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slot_id, team_id }),
+        });
+        if (!res.ok) throw new Error(`save failed ${res.status}`);
+        setThirdPlaceSaveStatus((s) => new Map(s).set(slot_id, "saved"));
+      } catch (e) {
+        console.error("[third-place] save failed", e);
+        setThirdPlaceSaveStatus((s) => new Map(s).set(slot_id, "error"));
+      }
+    },
+    [],
+  );
+
+  const writeThirdPlacePick = useCallback(
+    (slot_id: string, team_id: string | null) => {
+      setThirdPlacePicks((prev) => {
+        const next = new Map(prev);
+        if (team_id == null) next.delete(slot_id);
+        else next.set(slot_id, team_id);
+        return next;
+      });
+      const key = `third:${slot_id}`;
+      const existing = pendingTimers.current.get(key);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        flushThirdPlaceSave(slot_id, team_id);
+        pendingTimers.current.delete(key);
+      }, SAVE_DEBOUNCE_MS);
+      pendingTimers.current.set(key, timer);
+    },
+    [flushThirdPlaceSave],
   );
 
   const writePrediction = useCallback(
@@ -169,11 +229,64 @@ export function PredictionsClient({
     return result;
   }, [groupTeams, groupMatches, predictions]);
 
-  // R32 → Final cascade. Best-3rd picks aren't wired yet (APT-22) so the
-  // 8 best-3rd slots stay null; downstream R32 matches that reference them
-  // will see one side as null until APT-22 ships.
+  // Resolve the 8 best-3rd slot_labels into the bracket_slot.ids the
+  // user's third-place picks reference. The cluster UI uses these IDs;
+  // the cascade just needs the slot_label → team_id pairs.
+  const bestThirdSlots = useMemo<
+    Array<{ slot_id: string; slot_label: string }>
+  >(() => {
+    const reverse: Record<string, string> = {};
+    for (const [id, label] of Object.entries(slotLabelById)) {
+      reverse[label] = id;
+    }
+    return THIRD_PLACE_SLOT_LABELS.map((label) => ({
+      slot_label: label,
+      slot_id: reverse[label] ?? "",
+    }));
+  }, [slotLabelById]);
+
+  // The 12 teams the user's group predictions ranked 3rd (one per group).
+  const predictedThirds = useMemo<HydratedTeam[]>(() => {
+    const teamById = new Map(groupTeams.map((t) => [t.id, t]));
+    const result: HydratedTeam[] = [];
+    for (const g of standingsByGroup) {
+      const third = g.standings.find((s) => s.rank === 3);
+      const team = third ? teamById.get(third.team_id) : null;
+      if (team) result.push(team);
+    }
+    return result;
+  }, [standingsByGroup, groupTeams]);
+
+  // Convert the cluster's slot_id-keyed picks into the slot_label-keyed
+  // ThirdPlacePick[] shape that populateR32Slots wants. Picks where the
+  // user hasn't chosen a team pass through as team_id: null.
+  const thirdPlacePickList = useMemo<ThirdPlacePick[]>(() => {
+    return bestThirdSlots.map(({ slot_id, slot_label }) => ({
+      slot_label,
+      team_id: thirdPlacePicks.get(slot_id) ?? null,
+    }));
+  }, [bestThirdSlots, thirdPlacePicks]);
+
+  // Track whether every group-stage match has been predicted. The
+  // third-place cluster is locked until this is true so the user's
+  // predicted-thirds set has fully stabilized.
+  const groupPredictionsComplete = useMemo(() => {
+    if (groupMatches.length === 0) return false;
+    return groupMatches.every((m) => predictions.has(m.id));
+  }, [groupMatches, predictions]);
+
+  // R32 → Final cascade. Best-3rd picks now feed in via thirdPlacePickList.
   const slotMap = useMemo<Map<string, string | null>>(() => {
-    const r32Slots = populateR32Slots(standingsByGroup, []);
+    let r32Slots;
+    try {
+      r32Slots = populateR32Slots(standingsByGroup, thirdPlacePickList);
+    } catch (e) {
+      // Should never happen — UI prevents dup picks — but if a stale
+      // server response sneaks one through, degrade to no-picks cascade
+      // so the page still renders.
+      console.error("[predictions] populateR32Slots failed:", e);
+      r32Slots = populateR32Slots(standingsByGroup, []);
+    }
     const knockoutPreds: KnockoutMatchPrediction[] = [];
     for (const m of knockoutMatches) {
       const state = predictions.get(m.id);
@@ -188,7 +301,13 @@ export function PredictionsClient({
       });
     }
     return computeKnockoutCascade(r32Slots, knockoutPreds);
-  }, [standingsByGroup, knockoutMatches, predictions, slotLabelById]);
+  }, [
+    standingsByGroup,
+    thirdPlacePickList,
+    knockoutMatches,
+    predictions,
+    slotLabelById,
+  ]);
 
   const teamCodeById = useMemo(
     () => new Map(groupTeams.map((t) => [t.id, t.code])),
@@ -266,30 +385,42 @@ export function PredictionsClient({
             />
 
             {isKnockoutRound ? (
-              <div className="mt-6 space-y-2">
-                {activeKnockoutMatches.map((match) => {
-                  const state = predictions.get(match.id);
-                  return (
-                    <KnockoutCard
-                      key={match.id}
-                      match={match}
-                      homeTeam={teamCodeAtLabel(match.home_slot_label)}
-                      awayTeam={teamCodeAtLabel(match.away_slot_label)}
-                      homeScore={state?.home ?? null}
-                      awayScore={state?.away ?? null}
-                      predictedWinnerSlotId={state?.winner ?? null}
-                      saveStatus={saveStatus.get(match.id) ?? "idle"}
-                      onChange={(home, away, winner) =>
-                        writePrediction(match.id, { home, away, winner })
-                      }
-                    />
-                  );
-                })}
-                {activeKnockoutMatches.length === 0 ? (
-                  <p className="rounded-md border border-border bg-surface p-6 font-mono text-xs uppercase tracking-[0.06em] text-text-dim">
-                    No matches in this round yet.
-                  </p>
+              <div className="mt-6">
+                {activeRound?.stage === "r32" ? (
+                  <ThirdPlaceCluster
+                    slots={bestThirdSlots}
+                    predictedThirds={predictedThirds}
+                    picks={thirdPlacePicks}
+                    saveStatus={thirdPlaceSaveStatus}
+                    groupPredictionsComplete={groupPredictionsComplete}
+                    onChange={writeThirdPlacePick}
+                  />
                 ) : null}
+                <div className="space-y-2">
+                  {activeKnockoutMatches.map((match) => {
+                    const state = predictions.get(match.id);
+                    return (
+                      <KnockoutCard
+                        key={match.id}
+                        match={match}
+                        homeTeam={teamCodeAtLabel(match.home_slot_label)}
+                        awayTeam={teamCodeAtLabel(match.away_slot_label)}
+                        homeScore={state?.home ?? null}
+                        awayScore={state?.away ?? null}
+                        predictedWinnerSlotId={state?.winner ?? null}
+                        saveStatus={saveStatus.get(match.id) ?? "idle"}
+                        onChange={(home, away, winner) =>
+                          writePrediction(match.id, { home, away, winner })
+                        }
+                      />
+                    );
+                  })}
+                  {activeKnockoutMatches.length === 0 ? (
+                    <p className="rounded-md border border-border bg-surface p-6 font-mono text-xs uppercase tracking-[0.06em] text-text-dim">
+                      No matches in this round yet.
+                    </p>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="mt-6 space-y-3">
