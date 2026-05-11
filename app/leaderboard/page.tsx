@@ -2,26 +2,26 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { loadPredictionWorkspace } from "@/lib/group-data";
-import { SignOutButton } from "./sign-out-button";
-import { PredictionsClient } from "./predictions-client";
+import { loadLeaderboard } from "@/lib/leaderboard-data";
+import { SignOutButton } from "@/app/predictions/sign-out-button";
+import { LeaderboardClient } from "./leaderboard-client";
 
-export const metadata = { title: "Predictions — World Cup Bracket" };
+export const metadata = { title: "Leaderboard — World Cup Bracket" };
 
-export default async function PredictionsPage() {
+export default async function LeaderboardPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
-  const [{ data: profile }, workspace] = await Promise.all([
+  const [{ data: profile }, initialData] = await Promise.all([
     supabase
       .from("users")
       .select("username, profile_pic, total_points")
       .eq("id", user.id)
       .maybeSingle(),
-    loadPredictionWorkspace(user.id),
+    loadLeaderboard(),
   ]);
 
   const username = profile?.username ?? "player";
@@ -36,16 +36,12 @@ export default async function PredictionsPage() {
         points={points}
         email={user.email ?? ""}
       />
-      <PredictionsClient
-        rounds={workspace.rounds}
-        groupTeams={workspace.groupTeams}
-        groupMatches={workspace.groupMatches}
-        knockoutMatches={workspace.knockoutMatches}
-        initialPredictions={workspace.predictions}
-        initialThirdPlacePicks={workspace.thirdPlacePicks}
-        initialFinalistPicks={workspace.finalistPicks}
-        slotLabelById={workspace.slotLabelById}
-      />
+      <main className="mx-auto max-w-[840px] px-4 py-12 md:px-8">
+        <LeaderboardClient
+          initialPayload={initialData}
+          currentUserId={user.id}
+        />
+      </main>
     </div>
   );
 }
@@ -64,22 +60,22 @@ function TopBar({
   return (
     <header className="border-b border-border">
       <div className="mx-auto flex max-w-[1440px] items-center justify-between px-4 py-5 md:px-8">
-        <p
-          className="font-display text-2xl leading-none"
-          style={{ fontFamily: "var(--font-display)" }}
-        >
-          World Cup{" "}
-          <em
-            className="not-italic"
-            style={{ fontStyle: "italic", color: "var(--accent)" }}
-          >
-            Bracket
-          </em>
-        </p>
+        <Link href="/predictions" className="font-display text-2xl leading-none">
+          <span style={{ fontFamily: "var(--font-display)" }}>
+            World Cup{" "}
+            <em
+              className="not-italic"
+              style={{ fontStyle: "italic", color: "var(--accent)" }}
+            >
+              Bracket
+            </em>
+          </span>
+        </Link>
         <div className="flex items-center gap-4">
           <Link
             href="/leaderboard"
-            className="hidden font-mono text-xs uppercase tracking-[0.08em] text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary sm:block"
+            className="hidden font-mono text-xs uppercase tracking-[0.08em] text-accent sm:block"
+            aria-current="page"
           >
             <span className="tabular-nums">{points.toString().padStart(3, "0")}</span> PTS
           </Link>
