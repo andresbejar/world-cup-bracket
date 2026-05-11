@@ -13,6 +13,10 @@ import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
 import { ThirdPlaceCluster } from "./third-place-cluster";
 import {
+  FinalistPicks,
+  type FinalistPicksState,
+} from "./finalist-picks";
+import {
   computeGroupStandings,
   computeKnockoutCascade,
   GROUP_LETTERS,
@@ -26,6 +30,7 @@ import {
   type ThirdPlacePick,
 } from "@/lib/bracket";
 import type {
+  HydratedFinalistPicks,
   HydratedKnockoutMatch,
   HydratedMatch,
   HydratedPrediction,
@@ -43,6 +48,7 @@ interface Props {
   knockoutMatches: HydratedKnockoutMatch[];
   initialPredictions: HydratedPrediction[];
   initialThirdPlacePicks: HydratedThirdPlacePick[];
+  initialFinalistPicks: HydratedFinalistPicks;
   slotLabelById: Record<string, string>;
 }
 
@@ -62,6 +68,7 @@ export function PredictionsClient({
   knockoutMatches,
   initialPredictions,
   initialThirdPlacePicks,
+  initialFinalistPicks,
   slotLabelById,
 }: Props) {
   const [activeRoundId, setActiveRoundId] = useState<string>(
@@ -100,6 +107,13 @@ export function PredictionsClient({
   const [thirdPlaceSaveStatus, setThirdPlaceSaveStatus] = useState<
     Map<string, SaveStatus>
   >(new Map());
+
+  // Tournament-wide podium bet (independent of bracket cascade).
+  const [finalistPicks, setFinalistPicks] = useState<FinalistPicksState>(
+    initialFinalistPicks,
+  );
+  const [finalistSaveStatus, setFinalistSaveStatus] =
+    useState<SaveStatus>("idle");
 
   const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
@@ -152,6 +166,40 @@ export function PredictionsClient({
       }
     },
     [],
+  );
+
+  const flushFinalistSave = useCallback(
+    async (next: FinalistPicksState) => {
+      setFinalistSaveStatus("saving");
+      try {
+        const res = await fetch("/api/finalist-picks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(next),
+        });
+        if (!res.ok) throw new Error(`save failed ${res.status}`);
+        setFinalistSaveStatus("saved");
+      } catch (e) {
+        console.error("[finalist-picks] save failed", e);
+        setFinalistSaveStatus("error");
+      }
+    },
+    [],
+  );
+
+  const writeFinalistPicks = useCallback(
+    (next: FinalistPicksState) => {
+      setFinalistPicks(next);
+      const key = "finalist:row";
+      const existing = pendingTimers.current.get(key);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        flushFinalistSave(next);
+        pendingTimers.current.delete(key);
+      }, SAVE_DEBOUNCE_MS);
+      pendingTimers.current.set(key, timer);
+    },
+    [flushFinalistSave],
   );
 
   const writeThirdPlacePick = useCallback(
@@ -435,6 +483,14 @@ export function PredictionsClient({
                     </p>
                   ) : null}
                 </div>
+                {activeRound?.stage === "final" ? (
+                  <FinalistPicks
+                    teams={groupTeams}
+                    picks={finalistPicks}
+                    saveStatus={finalistSaveStatus}
+                    onChange={writeFinalistPicks}
+                  />
+                ) : null}
               </div>
             ) : (
               <div className="mt-6 space-y-3">

@@ -75,6 +75,12 @@ export interface HydratedThirdPlacePick {
   predicted_team_id: string;
 }
 
+export interface HydratedFinalistPicks {
+  first_place_team_id: string | null;
+  second_place_team_id: string | null;
+  third_place_team_id: string | null;
+}
+
 export interface PredictionWorkspaceData {
   rounds: HydratedRound[];
   groupTeams: HydratedTeam[];
@@ -82,6 +88,7 @@ export interface PredictionWorkspaceData {
   knockoutMatches: HydratedKnockoutMatch[];
   predictions: HydratedPrediction[];
   thirdPlacePicks: HydratedThirdPlacePick[];
+  finalistPicks: HydratedFinalistPicks;
   /** bracket_slot.id → bracket_slot.slot_label, for resolving predicted_winning_slot_id. */
   slotLabelById: Record<string, string>;
 }
@@ -98,6 +105,7 @@ export async function loadPredictionWorkspace(
     { data: matches, error: matchesErr },
     { data: predictions, error: predErr },
     { data: thirdPlace, error: thirdPlaceErr },
+    { data: finalist, error: finalistErr },
   ] = await Promise.all([
     supabase
       .from("rounds")
@@ -125,6 +133,11 @@ export async function loadPredictionWorkspace(
       .from("predicted_third_place_assignments")
       .select("slot_id, predicted_team_id")
       .eq("user_id", user_id),
+    supabase
+      .from("finalist_picks")
+      .select("first_place_team_id, second_place_team_id, third_place_team_id")
+      .eq("user_id", user_id)
+      .maybeSingle(),
   ]);
 
   if (roundsErr) throw roundsErr;
@@ -133,6 +146,7 @@ export async function loadPredictionWorkspace(
   if (matchesErr) throw matchesErr;
   if (predErr) throw predErr;
   if (thirdPlaceErr) throw thirdPlaceErr;
+  if (finalistErr) throw finalistErr;
 
   const teamById = new Map<string, HydratedTeam>(
     (teams ?? []).map((t) => [
@@ -204,6 +218,11 @@ export async function loadPredictionWorkspace(
     knockoutMatches,
     predictions: predictions ?? [],
     thirdPlacePicks: thirdPlace ?? [],
+    finalistPicks: finalist ?? {
+      first_place_team_id: null,
+      second_place_team_id: null,
+      third_place_team_id: null,
+    },
     slotLabelById,
   };
 }

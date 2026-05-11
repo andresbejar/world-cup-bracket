@@ -42,6 +42,7 @@ export default async function PredictionsPage() {
         knockoutMatches={workspace.knockoutMatches}
         initialPredictions={workspace.predictions}
         initialThirdPlacePicks={workspace.thirdPlacePicks}
+        initialFinalistPicks={workspace.finalistPicks}
         slotLabelById={workspace.slotLabelById}
       />
     </div>
