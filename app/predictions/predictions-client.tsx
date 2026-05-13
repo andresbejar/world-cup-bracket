@@ -13,6 +13,7 @@ import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
 import { ThirdPlaceCluster } from "./third-place-cluster";
 import { PredictedVsRealCard } from "./predicted-vs-real-card";
+import { PodiumBanner } from "./podium-banner";
 import {
   FinalistPicks,
   type FinalistPicksState,
@@ -487,8 +488,30 @@ export function PredictionsClient({
     return m;
   }, [knockoutMatches]);
 
-  const activeRound = rounds.find((r) => r.id === activeRoundId);
-  const isKnockoutRound = activeRound?.stage !== "group";
+  // Podium = tournament-wide side bet. Surfaces as a virtual round at
+  // the start of the round selector so users find it WAY before the
+  // FINAL tab "feels active" — by which time these picks have been
+  // locked for a month. Locks at first match kickoff, not at any
+  // round's 4hr-pre-deadline.
+  const finalistFilledCount =
+    (finalistPicks.first_place_team_id ? 1 : 0) +
+    (finalistPicks.second_place_team_id ? 1 : 0) +
+    (finalistPicks.third_place_team_id ? 1 : 0);
+  const firstKickoffAt = groupMatches[0]?.scheduled_at ?? null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const podiumLocked = firstKickoffAt
+    ? now >= new Date(firstKickoffAt).getTime()
+    : false;
+
+  const isPodium = activeRoundId === "podium";
+  const activeRound = isPodium
+    ? undefined
+    : rounds.find((r) => r.id === activeRoundId);
+  const isKnockoutRound = !isPodium && activeRound?.stage !== "group";
 
   const activeGroupMatches = groupMatchesByRound.get(activeRoundId) ?? [];
   const activeKnockoutMatches = knockoutMatchesByRound.get(activeRoundId) ?? [];
@@ -506,25 +529,68 @@ export function PredictionsClient({
   return (
     <div className="min-h-[100svh]">
       <main className="mx-auto max-w-[1440px] px-4 pb-24 pt-8 md:px-8">
+        {isPodium ? null : (
+          <PodiumBanner
+            filledCount={finalistFilledCount}
+            totalCount={3}
+            firstKickoffAt={firstKickoffAt}
+            onJump={() => setActiveRoundId("podium")}
+          />
+        )}
+
         <RoundSelector
           rounds={rounds}
           activeId={activeRoundId}
           onChange={setActiveRoundId}
+          podiumFilled={finalistFilledCount}
+          podiumLocked={podiumLocked}
         />
 
         <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[60fr_40fr] xl:gap-12">
           <section aria-label="Active round predictions">
-            <SectionHeading
-              eyebrow={
-                activeRound
-                  ? `${activeRound.stage === "group" ? "GROUP STAGE" : activeRound.stage.toUpperCase().replace("_", " ")} · ACTIVE ROUND`
-                  : "ACTIVE ROUND"
-              }
-              title={activeRound?.name ?? "Round"}
-              meta={meta(activeRound, filledInActiveRound, totalInActiveRound)}
-            />
+            {isPodium ? (
+              <SectionHeading
+                eyebrow="TOURNAMENT-WIDE BET · LOCKS AT FIRST KICKOFF"
+                title="Podium picks"
+                meta={
+                  <>
+                    <span className="block">
+                      {finalistFilledCount}/3 PICKED
+                    </span>
+                    {firstKickoffAt && !podiumLocked ? (
+                      <span className="mt-1 block text-text-dim">
+                        LOCKS {formatLockShort(firstKickoffAt)}
+                      </span>
+                    ) : null}
+                    {podiumLocked ? (
+                      <span className="mt-1 block text-text-dim">LOCKED</span>
+                    ) : null}
+                  </>
+                }
+              />
+            ) : (
+              <SectionHeading
+                eyebrow={
+                  activeRound
+                    ? `${activeRound.stage === "group" ? "GROUP STAGE" : activeRound.stage.toUpperCase().replace("_", " ")} · ACTIVE ROUND`
+                    : "ACTIVE ROUND"
+                }
+                title={activeRound?.name ?? "Round"}
+                meta={meta(activeRound, filledInActiveRound, totalInActiveRound)}
+              />
+            )}
 
-            {isKnockoutRound ? (
+            {isPodium ? (
+              <div className="mt-6">
+                <FinalistPicks
+                  teams={groupTeams}
+                  picks={finalistPicks}
+                  saveStatus={finalistSaveStatus}
+                  locked={podiumLocked}
+                  onChange={writeFinalistPicks}
+                />
+              </div>
+            ) : isKnockoutRound ? (
               <div className="mt-6">
                 {activeRound?.stage === "r32" ? (
                   <ThirdPlaceCluster
@@ -631,14 +697,6 @@ export function PredictionsClient({
                     </p>
                   ) : null}
                 </div>
-                {activeRound?.stage === "final" ? (
-                  <FinalistPicks
-                    teams={groupTeams}
-                    picks={finalistPicks}
-                    saveStatus={finalistSaveStatus}
-                    onChange={writeFinalistPicks}
-                  />
-                ) : null}
               </div>
             ) : (
               <div className="mt-6 space-y-3">
@@ -728,17 +786,64 @@ function RoundSelector({
   rounds,
   activeId,
   onChange,
+  podiumFilled,
+  podiumLocked,
 }: {
   rounds: HydratedRound[];
   activeId: string;
   onChange: (id: string) => void;
+  podiumFilled: number;
+  podiumLocked: boolean;
 }) {
+  const podiumActive = activeId === "podium";
+  const podiumComplete = podiumFilled >= 3;
+  // Note color: amber accent for incomplete (action needed), green for
+  // done, dim once the deadline passed. Stands out from the temporal
+  // round pills so users register "this one is different."
+  const podiumNoteClass = podiumActive
+    ? "text-bg/70"
+    : podiumLocked
+      ? "text-text-dim"
+      : podiumComplete
+        ? "text-green-correct"
+        : "text-accent";
+  const podiumNote = podiumLocked
+    ? "LOCKED"
+    : podiumComplete
+      ? "FILLED"
+      : `${podiumFilled}/3 PICKED`;
+
   return (
     <nav
       aria-label="Tournament rounds"
       className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0"
     >
       <ul className="flex min-w-max items-center gap-2">
+        <li>
+          <button
+            type="button"
+            onClick={() => onChange("podium")}
+            aria-current={podiumActive ? "page" : undefined}
+            className={
+              "group flex flex-col items-start gap-0.5 rounded-full border px-4 py-2 transition-colors duration-[var(--motion-micro)] " +
+              (podiumActive
+                ? "border-transparent bg-accent text-bg"
+                : "border-accent-muted/60 bg-surface text-text-primary hover:border-accent")
+            }
+          >
+            <span className="font-mono text-xs font-bold uppercase tracking-[0.08em]">
+              PODIUM
+            </span>
+            <span
+              className={
+                "font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums " +
+                podiumNoteClass
+              }
+            >
+              {podiumNote}
+            </span>
+          </button>
+        </li>
         {rounds.map((r) => {
           const active = r.id === activeId;
           return (
@@ -842,6 +947,18 @@ function formatCountdown(iso: string): string {
   const days = Math.floor(ms / 86_400_000);
   const hours = Math.floor((ms % 86_400_000) / 3_600_000);
   return `LOCKS IN ${days}D ${hours.toString().padStart(2, "0")}H`;
+}
+
+function formatLockShort(iso: string): string {
+  const d = new Date(iso);
+  const ms = d.getTime() - Date.now();
+  if (ms <= 0) return "AT KICKOFF";
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor((ms % 86_400_000) / 3_600_000);
+  if (days >= 1) return `IN ${days}D ${hours.toString().padStart(2, "0")}H`;
+  if (hours >= 1) return `IN ${hours}H`;
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  return `IN ${minutes}M`;
 }
 
 function formatShort(iso: string): string {

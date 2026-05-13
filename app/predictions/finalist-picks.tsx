@@ -25,6 +25,14 @@ interface Props {
   teams: HydratedTeam[];
   picks: FinalistPicksState;
   saveStatus: SaveStatus;
+  /**
+   * True once first match has kicked off (per design § Scoring,
+   * tournament-wide bets lock at first kickoff). Disables every
+   * input and replaces the footer copy with a lock notice. The
+   * server enforces this independently via checkFinalistLock; this
+   * flag is just the client mirror.
+   */
+  locked: boolean;
   onChange: (next: FinalistPicksState) => void;
 }
 
@@ -60,6 +68,7 @@ export function FinalistPicks({
   teams,
   picks,
   saveStatus,
+  locked,
   onChange,
 }: Props) {
   const sortedTeams = useMemo(() => {
@@ -126,12 +135,13 @@ export function FinalistPicks({
               <div className="relative flex-1 min-w-[180px]">
                 <select
                   value={picked}
+                  disabled={locked}
                   onChange={(e) =>
                     handlePick(row.key, e.target.value || null)
                   }
                   aria-label={`${row.label} pick`}
                   className={
-                    "w-full appearance-none rounded-sm border bg-bg px-3 py-2 pr-8 font-mono text-sm text-text-primary outline-none transition-colors duration-[var(--motion-micro)] focus:border-accent-muted " +
+                    "w-full appearance-none rounded-sm border bg-bg px-3 py-2 pr-8 font-mono text-sm text-text-primary outline-none transition-colors duration-[var(--motion-micro)] focus:border-accent-muted disabled:cursor-not-allowed disabled:opacity-60 " +
                     (picked
                       ? "border-accent-muted/50"
                       : "border-border")
@@ -171,8 +181,16 @@ export function FinalistPicks({
       </ul>
 
       <p className="mt-4 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        <span>Locks at first match kickoff. Independent of your bracket.</span>
-        <SaveStatusLabel status={saveStatus} hasAny={filledCount > 0} />
+        <span>
+          {locked
+            ? "Locked at first kickoff. Independent of your bracket."
+            : "Locks at first match kickoff. Independent of your bracket."}
+        </span>
+        {locked ? (
+          <span className="text-text-muted">LOCKED</span>
+        ) : (
+          <SaveStatusLabel status={saveStatus} hasAny={filledCount > 0} />
+        )}
       </p>
     </section>
   );
