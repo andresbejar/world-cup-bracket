@@ -12,6 +12,7 @@ import { MatchCard } from "./match-card";
 import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
 import { ThirdPlaceCluster } from "./third-place-cluster";
+import { PredictedVsRealCard } from "./predicted-vs-real-card";
 import {
   FinalistPicks,
   type FinalistPicksState,
@@ -19,12 +20,15 @@ import {
 import {
   computeGroupStandings,
   computeKnockoutCascade,
+  computeMatchPoints,
   GROUP_LETTERS,
   populateR32Slots,
   THIRD_PLACE_SLOT_LABELS,
+  type ActualMatch,
   type GroupStandings,
   type KnockoutMatchPrediction,
   type KnockoutRoundId,
+  type MatchPrediction,
   type MatchScore,
   type Team,
   type ThirdPlacePick,
@@ -538,6 +542,65 @@ export function PredictionsClient({
                 <div className="space-y-2">
                   {activeKnockoutMatches.map((match) => {
                     const state = predictions.get(match.id);
+                    if (match.status === "finished") {
+                      const homeCode =
+                        teamCodeAtLabel(match.home_slot_label) ?? "—";
+                      const awayCode =
+                        teamCodeAtLabel(match.away_slot_label) ?? "—";
+                      // Actual winner: read off the match row (cron sets
+                      // winning_slot_id via the score; penalty resolution is
+                      // its own column once that ships). For now derive from
+                      // score; tied finished knockouts will surface a
+                      // dash until the shootout column lands.
+                      const actualWinnerCode = knockoutWinnerCode(
+                        match.home_score,
+                        match.away_score,
+                        homeCode,
+                        awayCode,
+                      );
+                      const predictedWinnerCode = state?.winner
+                        ? state.winner === match.home_slot_id
+                          ? homeCode
+                          : awayCode
+                        : null;
+                      return (
+                        <PredictedVsRealCard
+                          key={match.id}
+                          meta={`${knockoutRoundLabel(match.round_id)} · M${match.match_index
+                            .toString()
+                            .padStart(2, "0")} · ${formatShort(match.scheduled_at)}`}
+                          homeName={teamNameAtLabel(match.home_slot_label)}
+                          awayName={teamNameAtLabel(match.away_slot_label)}
+                          predicted={
+                            state
+                              ? {
+                                  homeCode,
+                                  awayCode,
+                                  homeScore: state.home,
+                                  awayScore: state.away,
+                                  winnerCode: predictedWinnerCode,
+                                }
+                              : null
+                          }
+                          actual={{
+                            homeCode,
+                            awayCode,
+                            homeScore: match.home_score,
+                            awayScore: match.away_score,
+                            winnerCode: actualWinnerCode,
+                          }}
+                          pointsAwarded={scoreKnockoutPoints(
+                            match,
+                            state,
+                            actualWinnerCode === homeCode
+                              ? match.home_slot_id
+                              : actualWinnerCode === awayCode
+                                ? match.away_slot_id
+                                : null,
+                          )}
+                        />
+                      );
+                    }
                     return (
                       <KnockoutCard
                         key={match.id}
@@ -587,6 +650,37 @@ export function PredictionsClient({
                     <div className="space-y-2">
                       {items.map((match, idx) => {
                         const score = predictions.get(match.id);
+                        if (match.status === "finished") {
+                          return (
+                            <PredictedVsRealCard
+                              key={match.id}
+                              meta={`GROUP ${group} · M${(idx + 1)
+                                .toString()
+                                .padStart(2, "0")} · ${formatShort(match.scheduled_at)}`}
+                              homeName={match.home.name}
+                              awayName={match.away.name}
+                              predicted={
+                                score
+                                  ? {
+                                      homeCode: match.home.code,
+                                      awayCode: match.away.code,
+                                      homeScore: score.home,
+                                      awayScore: score.away,
+                                      winnerCode: null,
+                                    }
+                                  : null
+                              }
+                              actual={{
+                                homeCode: match.home.code,
+                                awayCode: match.away.code,
+                                homeScore: match.home_score,
+                                awayScore: match.away_score,
+                                winnerCode: null,
+                              }}
+                              pointsAwarded={scoreGroupPoints(match, score)}
+                            />
+                          );
+                        }
                         return (
                           <MatchCard
                             key={match.id}
@@ -748,6 +842,97 @@ function formatCountdown(iso: string): string {
   const days = Math.floor(ms / 86_400_000);
   const hours = Math.floor((ms % 86_400_000) / 3_600_000);
   return `LOCKS IN ${days}D ${hours.toString().padStart(2, "0")}H`;
+}
+
+function formatShort(iso: string): string {
+  return new Date(iso)
+    .toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    .toUpperCase();
+}
+
+function knockoutRoundLabel(roundId: string): string {
+  switch (roundId) {
+    case "r32":
+      return "R32";
+    case "r16":
+      return "R16";
+    case "qf":
+      return "QF";
+    case "sf":
+      return "SF";
+    case "third_place":
+      return "3RD";
+    case "final":
+      return "FINAL";
+    default:
+      return roundId.toUpperCase();
+  }
+}
+
+// Best-effort knockout winner from the regulation score. Returns null
+// when scores are tied — the polling job will surface penalty winners
+// on a dedicated column in a future pass; until then a tied finished
+// knockout shows ON PENS unattributed.
+function knockoutWinnerCode(
+  homeScore: number | null,
+  awayScore: number | null,
+  homeCode: string,
+  awayCode: string,
+): string | null {
+  if (homeScore == null || awayScore == null) return null;
+  if (homeScore > awayScore) return homeCode;
+  if (awayScore > homeScore) return awayCode;
+  return null;
+}
+
+function scoreGroupPoints(
+  match: HydratedMatch,
+  state: PredictionState | undefined,
+): number | null {
+  if (!state) return null;
+  const prediction: MatchPrediction = {
+    predicted_home_score: state.home,
+    predicted_away_score: state.away,
+    predicted_winning_slot_id: null,
+  };
+  const actual: ActualMatch = {
+    status: match.status,
+    stage: "group",
+    home_slot_id: match.home_slot_id,
+    away_slot_id: match.away_slot_id,
+    home_score: match.home_score,
+    away_score: match.away_score,
+    winning_slot_id: null,
+  };
+  return computeMatchPoints(prediction, actual);
+}
+
+function scoreKnockoutPoints(
+  match: HydratedKnockoutMatch,
+  state: PredictionState | undefined,
+  actualWinningSlotId: string | null,
+): number | null {
+  if (!state) return null;
+  const prediction: MatchPrediction = {
+    predicted_home_score: state.home,
+    predicted_away_score: state.away,
+    predicted_winning_slot_id: state.winner,
+  };
+  const actual: ActualMatch = {
+    status: match.status,
+    stage: "knockout",
+    home_slot_id: match.home_slot_id,
+    away_slot_id: match.away_slot_id,
+    home_score: match.home_score,
+    away_score: match.away_score,
+    winning_slot_id: actualWinningSlotId,
+  };
+  return computeMatchPoints(prediction, actual);
 }
 
 function groupedByGroup(
