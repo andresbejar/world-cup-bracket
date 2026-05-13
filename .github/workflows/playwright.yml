@@ -1,0 +1,71 @@
+name: Playwright E2E
+
+# Runs Playwright on every PR + every push to main. The same Supabase
+# project the deployed app uses gets hit by the e2e suite — global-setup
+# provisions a dedicated test user (e2e-test@worldcupbracket.local) and
+# teardown deletes it so prod data isn't polluted. The seed (matches /
+# teams / rounds / bracket_slots) is read-only from the test's POV.
+#
+# Required GitHub secrets:
+#   NEXT_PUBLIC_SUPABASE_URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   SUPABASE_SERVICE_ROLE_KEY
+#
+# Optional repo variable:
+#   E2E_PORT (default 3100) — port the test webServer binds to.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # One run per branch — kill stale runs when a new commit lands.
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Playwright (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both browsers from APT-33 AC. WebKit catches Safari-specific
+        # papercuts (iOS Safari is the family-beta hotspot per APT-38).
+        browser: [chromium, webkit]
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_PORT: ${{ vars.E2E_PORT || '3100' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Build Next.js (prod target — same path as Vercel)
+        run: npm run build
+
+      - name: Run Playwright
+        run: npx playwright test --project=${{ matrix.browser }}
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: playwright-report/
+          retention-days: 14
