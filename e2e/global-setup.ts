@@ -1,7 +1,7 @@
-import { chromium, type FullConfig, type Cookie } from "@playwright/test";
+import { type FullConfig, type Cookie } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 // Auth bootstrap for every E2E run. The flow:
@@ -133,9 +133,11 @@ export default async function globalSetup(config: FullConfig) {
     );
   }
 
-  // Adapt to Playwright's cookie shape and bind to the test host. Cookies
-  // are scoped to localhost on the e2e port — they have no meaning in
-  // any other context, so this is safe to commit-by-gitignore.
+  // Construct a Playwright storageState JSON directly — no browser
+  // launch needed. The webkit + chromium CI matrix only installs its
+  // own browser, so any chromium.launch() in setup would crash the
+  // webkit job. Doing the cookie translation in Node also shaves the
+  // ~3s chromium boot off every test run.
   const url = new URL(baseURL);
   const playwrightCookies: Cookie[] = cookieJar.map((c) => ({
     name: c.name,
@@ -147,31 +149,32 @@ export default async function globalSetup(config: FullConfig) {
     secure: url.protocol === "https:",
     sameSite: "Lax",
   }));
+  const storageState = { cookies: playwrightCookies, origins: [] };
 
-  const browser = await chromium.launch();
-  const context = await browser.newContext({ baseURL });
-  await context.addCookies(playwrightCookies);
-
-  // Sanity-check: pull /predictions and verify the server-rendered page
-  // sees us as authenticated. If middleware bounces to /sign-in, the
-  // cookie format / domain / signing is wrong and we want to fail loud
-  // here rather than have every spec time out.
-  const page = await context.newPage();
-  const response = await page.goto(`${baseURL}/predictions`, {
-    waitUntil: "domcontentloaded",
+  // Sanity-check via Node fetch: GET /predictions with the cookies and
+  // confirm middleware didn't bounce us to /sign-in. Fails loud here
+  // rather than letting every spec time out on a bad cookie shape.
+  const cookieHeader = playwrightCookies
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+  const probe = await fetch(`${baseURL}/predictions`, {
+    redirect: "manual",
+    headers: { cookie: cookieHeader },
   });
-  if (!response) {
-    throw new Error("global-setup: /predictions returned no response");
-  }
-  if (!page.url().endsWith("/predictions")) {
+  if (probe.status >= 300 && probe.status < 400) {
+    const location = probe.headers.get("location");
     throw new Error(
-      `global-setup: cookie injection failed — /predictions redirected to ${page.url()}`,
+      `global-setup: cookie injection failed — /predictions redirected to ${location}`,
+    );
+  }
+  if (probe.status >= 400) {
+    throw new Error(
+      `global-setup: /predictions probe returned ${probe.status} ${probe.statusText}`,
     );
   }
 
   mkdirSync(dirname(STATE_PATH), { recursive: true });
-  await context.storageState({ path: STATE_PATH });
-  await browser.close();
+  writeFileSync(STATE_PATH, JSON.stringify(storageState, null, 2));
 
   process.env.E2E_TEST_USER_ID = created.data.user.id;
 }
