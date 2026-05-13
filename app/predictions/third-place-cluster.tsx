@@ -7,6 +7,12 @@ import type { HydratedTeam } from "@/lib/group-data";
 // 12 teams their group-stage predictions ranked third in each group.
 // This stands in for FIFA's ~495-permutation tiebreaker table — turning
 // a tedious lookup into a stakes-bearing side bet (+1 pt per correct pick).
+//
+// Two render modes:
+//   - Pre-resolution: 8 dropdowns. The user picks; correctness unknowable.
+//   - Post-resolution: once `bracket_slots.real_team_id` is set on all 8
+//     best-3rd-N slots (admin out-of-band, post group stage), each row
+//     swaps dropdown → resolved team + correctness indicator (+1 / 0).
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -26,6 +32,10 @@ interface Props {
   saveStatus: ReadonlyMap<string, SaveStatus>;
   /** True once all 72 group-stage matches have been predicted; gates the cluster. */
   groupPredictionsComplete: boolean;
+  /** slot_label → real_team_id for whichever slots FIFA has settled. */
+  realTeamIdBySlotLabel: Record<string, string>;
+  teamCodeById: ReadonlyMap<string, string>;
+  teamNameById: ReadonlyMap<string, string>;
   onChange: (slot_id: string, team_id: string | null) => void;
 }
 
@@ -35,6 +45,9 @@ export function ThirdPlaceCluster({
   picks,
   saveStatus,
   groupPredictionsComplete,
+  realTeamIdBySlotLabel,
+  teamCodeById,
+  teamNameById,
   onChange,
 }: Props) {
   // Build the "which team is already taken by which slot" map so we can
@@ -46,7 +59,21 @@ export function ThirdPlaceCluster({
   }, [picks]);
 
   const filledCount = picks.size;
-  const disabled = !groupPredictionsComplete;
+  // Resolved when FIFA has placed all 8 best-3rd teams (admin write).
+  // Partial resolution is impossible by design — group stage settles all
+  // 8 in one shot — but we defensively require ALL slots resolved before
+  // switching modes so a mid-flight write can't show inconsistent state.
+  const resolved =
+    slots.length > 0 &&
+    slots.every((s) => !!realTeamIdBySlotLabel[s.slot_label]);
+  const correctCount = resolved
+    ? slots.reduce((acc, s) => {
+        const real = realTeamIdBySlotLabel[s.slot_label];
+        const picked = picks.get(s.slot_id);
+        return picked && picked === real ? acc + 1 : acc;
+      }, 0)
+    : 0;
+  const disabled = resolved || !groupPredictionsComplete;
 
   return (
     <section
@@ -66,7 +93,9 @@ export function ThirdPlaceCluster({
           </h3>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim tabular-nums whitespace-nowrap">
-          {filledCount}/8 PICKED
+          {resolved
+            ? `${correctCount}/8 CORRECT`
+            : `${filledCount}/8 PICKED`}
         </span>
       </header>
 
@@ -74,6 +103,57 @@ export function ThirdPlaceCluster({
         {slots.map((slot, idx) => {
           const picked = picks.get(slot.slot_id) ?? "";
           const status = saveStatus.get(slot.slot_id) ?? "idle";
+          const realTeamId = realTeamIdBySlotLabel[slot.slot_label];
+          if (resolved && realTeamId) {
+            const correct = picked === realTeamId;
+            const realCode = teamCodeById.get(realTeamId) ?? realTeamId;
+            const realName = teamNameById.get(realTeamId) ?? null;
+            const pickedCode = picked
+              ? teamCodeById.get(picked) ?? picked
+              : null;
+            return (
+              <li key={slot.slot_id} className="flex items-center gap-3">
+                <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted tabular-nums">
+                  3RD-{idx + 1}
+                </span>
+                <div
+                  className={
+                    "flex flex-1 items-center gap-2 rounded-sm border bg-bg px-3 py-2 " +
+                    (correct
+                      ? "border-green-correct/40"
+                      : "border-red-wrong/40")
+                  }
+                >
+                  <span className="font-mono text-sm font-bold uppercase tracking-[0.06em] text-text-primary">
+                    {realCode}
+                  </span>
+                  {realName ? (
+                    <span className="truncate text-sm text-text-muted">
+                      {realName}
+                    </span>
+                  ) : null}
+                  {!correct && pickedCode ? (
+                    <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+                      you predicted {pickedCode}
+                    </span>
+                  ) : null}
+                  {!correct && !pickedCode ? (
+                    <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+                      no pick
+                    </span>
+                  ) : null}
+                </div>
+                <span
+                  className={
+                    "shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.06em] tabular-nums " +
+                    (correct ? "text-green-correct" : "text-red-wrong")
+                  }
+                >
+                  {correct ? "+1 PT" : "0 PT"}
+                </span>
+              </li>
+            );
+          }
           return (
             <li key={slot.slot_id} className="flex items-center gap-3">
               <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted tabular-nums">
@@ -136,9 +216,11 @@ export function ThirdPlaceCluster({
       </ul>
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        {disabled
-          ? "Finish your group-stage predictions to unlock these picks."
-          : "+1 PT IF CORRECT · whichever group's 3rd-place lands in each slot per FIFA's bracket structure."}
+        {resolved
+          ? `FIFA placed the 8 third-place teams. You scored ${correctCount} of 8 possible points here.`
+          : !groupPredictionsComplete
+            ? "Finish your group-stage predictions to unlock these picks."
+            : "+1 PT IF CORRECT · whichever group's 3rd-place lands in each slot per FIFA's bracket structure."}
       </p>
     </section>
   );

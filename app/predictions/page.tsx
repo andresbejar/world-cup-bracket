@@ -45,6 +45,7 @@ export default async function PredictionsPage() {
         initialThirdPlacePicks={workspace.thirdPlacePicks}
         initialFinalistPicks={workspace.finalistPicks}
         slotLabelById={workspace.slotLabelById}
+        realTeamIdBySlotLabel={workspace.realTeamIdBySlotLabel}
       />
     </div>
   );

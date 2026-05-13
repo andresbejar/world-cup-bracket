@@ -26,6 +26,13 @@ interface Props {
   /** Full team names if available — used in the penalty pill labels. */
   homeName: string | null;
   awayName: string | null;
+  /**
+   * Reality-merge annotation: when reality replaces a slot's team, this is
+   * the team the user originally predicted there. Null when reality and
+   * prediction agree (or when reality hasn't landed yet for this slot).
+   */
+  homePredictedCode: string | null;
+  awayPredictedCode: string | null;
   homeScore: number | null;
   awayScore: number | null;
   /** Currently-picked slot id (winner). Either home_slot_id, away_slot_id, or null. */
@@ -44,6 +51,8 @@ export function KnockoutCard({
   awayTeam,
   homeName,
   awayName,
+  homePredictedCode,
+  awayPredictedCode,
   homeScore,
   awayScore,
   predictedWinnerSlotId,
@@ -99,8 +108,16 @@ export function KnockoutCard({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <KnockoutTeamRow team={homeTeam} name={homeName} />
-          <KnockoutTeamRow team={awayTeam} name={awayName} />
+          <KnockoutTeamRow
+            team={homeTeam}
+            name={homeName}
+            predictedCode={homePredictedCode}
+          />
+          <KnockoutTeamRow
+            team={awayTeam}
+            name={awayName}
+            predictedCode={awayPredictedCode}
+          />
         </div>
 
         <div className="flex flex-col items-end gap-1.5 self-end sm:self-auto">
@@ -163,9 +180,11 @@ export function KnockoutCard({
 function KnockoutTeamRow({
   team,
   name,
+  predictedCode,
 }: {
   team: string | null;
   name: string | null;
+  predictedCode: string | null;
 }) {
   return (
     <div className="flex items-center gap-3">
@@ -177,6 +196,14 @@ function KnockoutTeamRow({
           </span>
           {name ? (
             <span className="truncate text-sm text-text-muted">{name}</span>
+          ) : null}
+          {predictedCode ? (
+            <span
+              className="ml-1 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim"
+              title={`Your prediction: ${predictedCode}`}
+            >
+              · you predicted {predictedCode}
+            </span>
           ) : null}
         </>
       ) : (

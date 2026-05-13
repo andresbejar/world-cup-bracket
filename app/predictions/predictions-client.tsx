@@ -50,6 +50,7 @@ interface Props {
   initialThirdPlacePicks: HydratedThirdPlacePick[];
   initialFinalistPicks: HydratedFinalistPicks;
   slotLabelById: Record<string, string>;
+  realTeamIdBySlotLabel: Record<string, string>;
 }
 
 interface PredictionState {
@@ -70,6 +71,7 @@ export function PredictionsClient({
   initialThirdPlacePicks,
   initialFinalistPicks,
   slotLabelById,
+  realTeamIdBySlotLabel,
 }: Props) {
   const [activeRoundId, setActiveRoundId] = useState<string>(
     rounds.find((r) => r.stage === "group")?.id ?? rounds[0]?.id ?? "",
@@ -241,20 +243,39 @@ export function PredictionsClient({
   );
 
   // Group cascade — computeGroupStandings × 12.
+  //
+  // Reality merge: for each group match, prefer the real 90+ET score when
+  // status==='finished' (cron-populated from api-football); fall back to
+  // the user's predicted score otherwise. As matches finish IRL, the
+  // standings table morphs from "your prediction" to reality without the
+  // user touching their picks. Pure swap — the slot-ID premise from the
+  // design doc means downstream cascade still works either way.
   const standingsByGroup = useMemo<GroupStandings[]>(() => {
-    const matchById = new Map(groupMatches.map((m) => [m.id, m]));
     const scoresByGroup = new Map<string, MatchScore[]>();
     for (const letter of GROUP_LETTERS) scoresByGroup.set(letter, []);
-    for (const [matchId, state] of predictions) {
-      const m = matchById.get(matchId);
-      if (!m) continue;
+    for (const m of groupMatches) {
       const bucket = scoresByGroup.get(m.home.group_letter);
       if (!bucket) continue;
+      const useReal =
+        m.status === "finished" &&
+        m.home_score != null &&
+        m.away_score != null;
+      if (useReal) {
+        bucket.push({
+          home_team_id: m.home.id,
+          away_team_id: m.away.id,
+          home_score: m.home_score!,
+          away_score: m.away_score!,
+        });
+        continue;
+      }
+      const pred = predictions.get(m.id);
+      if (!pred) continue;
       bucket.push({
         home_team_id: m.home.id,
         away_team_id: m.away.id,
-        home_score: state.home,
-        away_score: state.away,
+        home_score: pred.home,
+        away_score: pred.away,
       });
     }
     const teamsByGroup = new Map<string, Team[]>();
@@ -276,6 +297,18 @@ export function PredictionsClient({
     }
     return result;
   }, [groupTeams, groupMatches, predictions]);
+
+  // Per-group reality indicator for the standings sidebar: how many of
+  // each group's 3 matches have finished. Drives the "REAL / PREDICTED"
+  // pill under each group header.
+  const realMatchCountByGroup = useMemo<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    for (const letter of GROUP_LETTERS) counts[letter] = 0;
+    for (const m of groupMatches) {
+      if (m.status === "finished") counts[m.home.group_letter] += 1;
+    }
+    return counts;
+  }, [groupMatches]);
 
   // Resolve the 8 best-3rd slot_labels into the bracket_slot.ids the
   // user's third-place picks reference. The cluster UI uses these IDs;
@@ -324,23 +357,23 @@ export function PredictionsClient({
   }, [groupMatches, predictions]);
 
   // R32 → Final cascade. Best-3rd picks now feed in via thirdPlacePickList.
-  const slotMap = useMemo<Map<string, string | null>>(() => {
-    let r32Slots;
-    try {
-      r32Slots = populateR32Slots(standingsByGroup, thirdPlacePickList);
-    } catch (e) {
-      // Should never happen — UI prevents dup picks — but if a stale
-      // server response sneaks one through, degrade to no-picks cascade
-      // so the page still renders.
-      console.error("[predictions] populateR32Slots failed:", e);
-      r32Slots = populateR32Slots(standingsByGroup, []);
-    }
-    const knockoutPreds: KnockoutMatchPrediction[] = [];
+  //
+  // Two parallel cascades are built here:
+  //   - predictedSlotMap: pure prediction tree. Used to compute the
+  //     "you predicted: X" annotation when reality replaces a team.
+  //   - slotMap: predicted cascade with R32 input team_ids overridden
+  //     by `bracket_slots.real_team_id` when present. This is what every
+  //     downstream card displays.
+  // Slot-ID premise: the user's "which slot advances" choice survives
+  // reality replacement — the slot still points at the same downstream
+  // node, just with the actual team behind it.
+  const knockoutPreds = useMemo<KnockoutMatchPrediction[]>(() => {
+    const out: KnockoutMatchPrediction[] = [];
     for (const m of knockoutMatches) {
       const state = predictions.get(m.id);
       const winner_label =
         state?.winner != null ? slotLabelById[state.winner] ?? null : null;
-      knockoutPreds.push({
+      out.push({
         round_id: m.round_id as KnockoutRoundId,
         match_index: m.match_index,
         home_slot_label: m.home_slot_label,
@@ -348,13 +381,41 @@ export function PredictionsClient({
         predicted_winner_label: winner_label,
       });
     }
+    return out;
+  }, [knockoutMatches, predictions, slotLabelById]);
+
+  const predictedSlotMap = useMemo<Map<string, string | null>>(() => {
+    let r32Slots;
+    try {
+      r32Slots = populateR32Slots(standingsByGroup, thirdPlacePickList);
+    } catch (e) {
+      console.error("[predictions] populateR32Slots failed:", e);
+      r32Slots = populateR32Slots(standingsByGroup, []);
+    }
     return computeKnockoutCascade(r32Slots, knockoutPreds);
+  }, [standingsByGroup, thirdPlacePickList, knockoutPreds]);
+
+  const slotMap = useMemo<Map<string, string | null>>(() => {
+    let r32Slots;
+    try {
+      r32Slots = populateR32Slots(standingsByGroup, thirdPlacePickList);
+    } catch (e) {
+      console.error("[predictions] populateR32Slots failed:", e);
+      r32Slots = populateR32Slots(standingsByGroup, []);
+    }
+    // Override R32 input slot team_ids with reality when present. The
+    // cascade walks downstream from these, so reality propagates into
+    // R16+ via the user's slot-advancement picks.
+    const realOverridden = r32Slots.map((s) => {
+      const real = realTeamIdBySlotLabel[s.slot_label];
+      return real ? { ...s, team_id: real } : s;
+    });
+    return computeKnockoutCascade(realOverridden, knockoutPreds);
   }, [
     standingsByGroup,
     thirdPlacePickList,
-    knockoutMatches,
-    predictions,
-    slotLabelById,
+    knockoutPreds,
+    realTeamIdBySlotLabel,
   ]);
 
   const teamCodeById = useMemo(
@@ -382,6 +443,21 @@ export function PredictionsClient({
       return teamNameById.get(teamId) ?? null;
     },
     [slotMap, teamNameById],
+  );
+
+  // For "you predicted: X" annotation: return the user-predicted code at
+  // a slot when (a) reality has overridden the cascade for that slot AND
+  // (b) the predicted team differs from the real one. Returns null when
+  // there's nothing meaningful to annotate.
+  const predictedCodeIfDiffers = useCallback(
+    (label: string): string | null => {
+      const realId = slotMap.get(label);
+      const predId = predictedSlotMap.get(label);
+      if (!realId || !predId) return null;
+      if (realId === predId) return null;
+      return teamCodeById.get(predId) ?? predId;
+    },
+    [slotMap, predictedSlotMap, teamCodeById],
   );
 
   const groupMatchesByRound = useMemo(() => {
@@ -453,6 +529,9 @@ export function PredictionsClient({
                     picks={thirdPlacePicks}
                     saveStatus={thirdPlaceSaveStatus}
                     groupPredictionsComplete={groupPredictionsComplete}
+                    realTeamIdBySlotLabel={realTeamIdBySlotLabel}
+                    teamCodeById={teamCodeById}
+                    teamNameById={teamNameById}
                     onChange={writeThirdPlacePick}
                   />
                 ) : null}
@@ -467,6 +546,12 @@ export function PredictionsClient({
                         awayTeam={teamCodeAtLabel(match.away_slot_label)}
                         homeName={teamNameAtLabel(match.home_slot_label)}
                         awayName={teamNameAtLabel(match.away_slot_label)}
+                        homePredictedCode={predictedCodeIfDiffers(
+                          match.home_slot_label,
+                        )}
+                        awayPredictedCode={predictedCodeIfDiffers(
+                          match.away_slot_label,
+                        )}
                         homeScore={state?.home ?? null}
                         awayScore={state?.away ?? null}
                         predictedWinnerSlotId={state?.winner ?? null}
@@ -533,6 +618,7 @@ export function PredictionsClient({
           >
             <BracketSidebar
               standingsByGroup={standingsByGroup}
+              realMatchCountByGroup={realMatchCountByGroup}
               slotMap={slotMap}
               teamCodeById={teamCodeById}
               activeRound={activeRound}

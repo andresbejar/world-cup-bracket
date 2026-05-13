@@ -91,6 +91,14 @@ export interface PredictionWorkspaceData {
   finalistPicks: HydratedFinalistPicks;
   /** bracket_slot.id → bracket_slot.slot_label, for resolving predicted_winning_slot_id. */
   slotLabelById: Record<string, string>;
+  /**
+   * bracket_slot.slot_label → real_team_id, for every slot whose
+   * `real_team_id` has been populated. Group stage settling writes the
+   * 24 group-driven R32 inputs (winner-A..L, runner-up-A..L); admins
+   * land the 8 best-3rd-N slots out-of-band. Downstream knockout slot
+   * labels (`r32-match-N-winner`, etc.) aren't written by the cron yet.
+   */
+  realTeamIdBySlotLabel: Record<string, string>;
 }
 
 export async function loadPredictionWorkspace(
@@ -163,8 +171,12 @@ export async function loadPredictionWorkspace(
 
   const slotToTeamId = new Map<string, string>();
   const slotLabelById: Record<string, string> = {};
+  const realTeamIdBySlotLabel: Record<string, string> = {};
   for (const s of slots ?? []) {
-    if (s.real_team_id) slotToTeamId.set(s.id, s.real_team_id);
+    if (s.real_team_id) {
+      slotToTeamId.set(s.id, s.real_team_id);
+      realTeamIdBySlotLabel[s.slot_label] = s.real_team_id;
+    }
     slotLabelById[s.id] = s.slot_label;
   }
 
@@ -224,6 +236,7 @@ export async function loadPredictionWorkspace(
       third_place_team_id: null,
     },
     slotLabelById,
+    realTeamIdBySlotLabel,
   };
 }
 

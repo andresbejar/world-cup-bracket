@@ -22,6 +22,9 @@ import type { HydratedRound } from "@/lib/group-data";
 interface Props {
   /** Pre-computed by the parent: 12 groups in alpha order with ranked standings. */
   standingsByGroup: GroupStandings[];
+  /** group_letter → number of finished matches in that group (0..3). Drives the
+   * per-group "REAL / PREDICTED" indicator under each header. */
+  realMatchCountByGroup: Record<string, number>;
   /** Pre-computed by the parent: every knockout slot label → team_id occupant (or null). */
   slotMap: ReadonlyMap<string, string | null>;
   /** team_id → 3-letter team code. */
@@ -34,6 +37,7 @@ type SidebarTab = "bracket" | "standings";
 
 export function BracketSidebar({
   standingsByGroup,
+  realMatchCountByGroup,
   slotMap,
   teamCodeById,
   activeRound,
@@ -52,6 +56,7 @@ export function BracketSidebar({
       ) : (
         <StandingsView
           standingsByGroup={standingsByGroup}
+          realMatchCountByGroup={realMatchCountByGroup}
           teamCodeById={teamCodeById}
         />
       )}
@@ -470,29 +475,29 @@ function ThirdPlaceBlock({
 
 function StandingsView({
   standingsByGroup,
+  realMatchCountByGroup,
   teamCodeById,
 }: {
   standingsByGroup: GroupStandings[];
+  realMatchCountByGroup: Record<string, number>;
   teamCodeById: ReadonlyMap<string, string>;
 }) {
   const tieFlagged = standingsByGroup.some((g) =>
     g.standings.some((s) => s.needs_tiebreaker),
   );
-  const filled = standingsByGroup.reduce(
-    (acc, g) => acc + g.standings.filter((s) => s.played > 0).length,
+  const totalRealMatches = standingsByGroup.reduce(
+    (acc, g) => acc + (realMatchCountByGroup[g.group_letter] ?? 0),
     0,
   );
-  const totalTeams = standingsByGroup.reduce(
-    (acc, g) => acc + g.standings.length,
-    0,
-  );
+  const totalGroupMatches = standingsByGroup.length * 3;
+  const anyReal = totalRealMatches > 0;
 
   return (
     <div role="tabpanel">
       <SectionHeading
-        eyebrow="GROUP STAGE · LIVE"
+        eyebrow={anyReal ? "GROUP STAGE · LIVE" : "GROUP STAGE · PREDICTED"}
         title="Standings"
-        meta={`${filled}/${totalTeams} ACTIVE`}
+        meta={`${totalRealMatches}/${totalGroupMatches} REAL`}
       />
 
       <ul className="mt-5 space-y-4">
@@ -500,6 +505,7 @@ function StandingsView({
           <GroupTable
             key={group.group_letter}
             group={group}
+            realMatchCount={realMatchCountByGroup[group.group_letter] ?? 0}
             teamCodeById={teamCodeById}
           />
         ))}
@@ -508,7 +514,9 @@ function StandingsView({
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
         {tieFlagged
           ? "* unresolved tiebreaker — adjust predictions to break"
-          : "Top 2 from each group + 8 best-thirds advance to R32."}
+          : anyReal
+            ? "Real matches replace your predicted scores as they finish."
+            : "Top 2 from each group + 8 best-thirds advance to R32."}
       </p>
     </div>
   );
@@ -516,16 +524,36 @@ function StandingsView({
 
 function GroupTable({
   group,
+  realMatchCount,
   teamCodeById,
 }: {
   group: GroupStandings;
+  realMatchCount: number;
   teamCodeById: ReadonlyMap<string, string>;
 }) {
+  const settled = realMatchCount >= 3;
+  const partial = realMatchCount > 0 && !settled;
   return (
     <li className="rounded-sm border border-border bg-bg">
       <div className="flex items-baseline justify-between border-b border-border px-3 py-2">
         <p className="font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-text-primary">
           Group {group.group_letter}
+          <span
+            className={
+              "ml-2 font-mono text-[9px] font-normal tracking-[0.08em] tabular-nums " +
+              (settled
+                ? "text-green-correct"
+                : partial
+                  ? "text-accent"
+                  : "text-text-dim")
+            }
+          >
+            {settled
+              ? "FINAL"
+              : partial
+                ? `${realMatchCount}/3 REAL`
+                : "PREDICTED"}
+          </span>
         </p>
         <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-dim">
           PL · GD · PTS
