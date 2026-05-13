@@ -21,7 +21,10 @@ export function SignOutButton() {
       type="button"
       onClick={onClick}
       disabled={pending}
-      className="font-mono text-xs uppercase tracking-[0.08em] text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary disabled:opacity-60"
+      // min-h-[44px] enforces DESIGN.md § Accessibility touch-target floor.
+      // px-2 keeps the visual footprint tight on desktop while expanding
+      // the hit area enough for thumbs on mobile.
+      className="inline-flex min-h-[44px] items-center px-2 font-mono text-xs uppercase tracking-[0.08em] text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary disabled:opacity-60"
     >
       {pending ? "…" : "Sign out"}
     </button>

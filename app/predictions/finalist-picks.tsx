@@ -140,6 +140,7 @@ export function FinalistPicks({
                     handlePick(row.key, e.target.value || null)
                   }
                   aria-label={`${row.label} pick`}
+                  style={{ minHeight: 44 }}
                   className={
                     "w-full appearance-none rounded-sm border bg-bg px-3 py-2 pr-8 font-mono text-sm text-text-primary outline-none transition-colors duration-[var(--motion-micro)] focus:border-accent-muted disabled:cursor-not-allowed disabled:opacity-60 " +
                     (picked

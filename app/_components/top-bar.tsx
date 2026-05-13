@@ -55,8 +55,11 @@ export function TopBar({ active, username, avatar, points, email }: Props) {
                   <Link
                     href={item.href}
                     aria-current={isActive ? "page" : undefined}
+                    // min-h-[44px] meets DESIGN.md § Accessibility touch-target
+                    // floor on mobile; inline-flex centers the label inside
+                    // the expanded hit area without disturbing desktop rhythm.
                     className={
-                      "block rounded-full border px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.08em] transition-colors duration-[var(--motion-micro)] " +
+                      "inline-flex min-h-[44px] items-center rounded-full border px-4 font-mono text-[11px] font-bold uppercase tracking-[0.08em] transition-colors duration-[var(--motion-micro)] " +
                       (isActive
                         ? "border-transparent bg-accent text-bg"
                         : "border-border bg-surface text-text-muted hover:text-text-primary")

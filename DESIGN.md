@@ -128,19 +128,32 @@ For Next.js: use `next/font/google` for Instrument Serif and JetBrains Mono. Loa
 ### Bracket page (the canonical workspace)
 
 - **Desktop primary:** 1440px target, 60/40 split. Left 60% (~860px) holds the active round's prediction cards in a vertical stack. Right 40% (~580px) is a sticky bracket-tree diagram showing the full knockout structure.
-- **Tablet (768–1199px):** stack vertically — cards above, full-width bracket tree below (not sticky).
-- **Mobile (<768px):** single column, prediction cards full-width. Bracket tree behind a tab/modal toggle accessible from the round selector.
+- **Tablet (768–1279px):** stack vertically — cards above, full-width bracket tree below (not sticky). Tailwind breakpoint `xl:` (1280px) gates the 60/40 split.
+- **Mobile (<768px):** single column, prediction cards full-width. Bracket tree stacks below main column (vs. the original spec's tab/modal toggle from the round selector — modal version is a known follow-up, the SVG inside the sidebar is horizontally scrollable so the tree is functional, just below-the-fold).
+- **Round selector:** horizontal `overflow-x-auto` strip, full-width via negative margin trick (`-mx-4 px-4`) so pills can scroll edge-to-edge on mobile without page horizontal scroll.
 
 ### Other surfaces
 
-- **Leaderboard:** centered table, max-width ~840px. Avatars + monospace ranks + tabular points.
-- **Sign-in / first-run:** centered card, generous whitespace, single CTA. Editorial.
+- **Leaderboard:** centered table, max-width ~840px. Avatars + monospace ranks + tabular points. Single-column on mobile; row reflows the username + counts + total points without truncating the username (`truncate` on the name container, `shrink-0` on the points).
+- **Sign-in / first-run:** centered card, generous whitespace, single CTA. Editorial. Headline wraps to two lines under 480px (intentional).
 - **Profile:** form layout, label-above-input, generous spacing.
+- **Top bar (global nav):** wordmark + two-item pill nav (Predictions / Leaderboard) + user pill + sign-out. Uses `flex-wrap` so the nav pills drop to their own row on mobile while the user identity row stays on top.
 
 ### Container
 
 - **Max content width:** 1200px for marketing surfaces, 1440px for the bracket workspace.
 - **Page padding:** `--space-xl` (32px) on desktop, `--space-md` (16px) on mobile.
+
+### Mobile touch-target enforcement (DESIGN.md § Accessibility · 44x44 minimum)
+
+These components enforce the touch-target floor explicitly so design changes don't accidentally regress accessibility:
+
+- `ScoreInput` — `style={{ minHeight: 44 }}` on the wrapper
+- `TopBar` nav pills — `inline-flex min-h-[44px] items-center` on each link
+- `SignOutButton` — `inline-flex min-h-[44px] items-center px-2`
+- `PenaltyPill` (knockout tied-score picker) — `inline-flex min-h-[44px] items-center px-4 py-2`
+- `ThirdPlaceCluster` + `FinalistPicks` `<select>` — `style={{ minHeight: 44 }}`
+- Round-selector pills — `flex flex-col items-start gap-0.5 ... px-4 py-2` over two lines of text clears 44px naturally; do not collapse to a single line without re-checking
 
 ## Border Radius
 
@@ -224,3 +237,5 @@ The product fails the "did a real designer make this?" test if any of these appe
 | 2026-05-09 | Predicted-vs-real triptych as documented design pattern | First-class UI motif, not just an interaction note. The soul of the product |
 | 2026-05-09 | Penalty-winner inline picker | Knockout-stage tied scores need explicit winner picks; surfaces only when score is tied |
 | 2026-05-09 | `+1 pt` affordance "whisper-loud" treatment | Same visual family as deadline countdown; if it screams, the side-bet feels like a leaderboard mechanic |
+| 2026-05-12 | Mobile bracket sidebar stacks below main column | Original spec called for modal toggle from round selector; deferred as future polish. The horizontal-scroll SVG inside the existing sidebar is functional below-the-fold and avoids the modal-state complexity for the family-beta cut |
+| 2026-05-12 | 44x44 touch targets enforced via explicit `min-h-[44px]` rather than padding-only | Catches accidental regressions; documented per-component in § Layout. Padding alone bent under text-size tweaks |

@@ -236,9 +236,9 @@ function PenaltyPicker({
     <div
       role="radiogroup"
       aria-label="Penalty-shootout winner"
-      className="flex flex-wrap items-center gap-3 border-t border-dashed border-border pt-3"
+      className="flex flex-wrap items-center gap-2 border-t border-dashed border-border pt-3 sm:gap-3"
     >
-      <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted">
+      <span className="w-full font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted sm:w-auto">
         Tied at 90+ET · penalty winner
       </span>
       <PenaltyPill
@@ -253,7 +253,7 @@ function PenaltyPicker({
         selected={awaySelected}
         onClick={() => onPick("away")}
       />
-      <span className="ml-auto font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted">
+      <span className="w-full font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted sm:ml-auto sm:w-auto">
         +1 PT IF CORRECT
       </span>
     </div>
@@ -278,8 +278,11 @@ function PenaltyPill({
       aria-pressed={selected}
       role="radio"
       aria-checked={selected}
+      // min-h-[44px] enforces the DESIGN.md § Accessibility touch-target
+      // floor on mobile. Visual padding stays compact via the inner span,
+      // so desktop rhythm isn't disturbed.
       className={
-        "rounded-full border px-3 py-1 font-mono text-xs font-medium tracking-[0.04em] transition-colors duration-[var(--motion-micro)] " +
+        "inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 font-mono text-xs font-medium tracking-[0.04em] transition-colors duration-[var(--motion-micro)] " +
         (selected
           ? "border-accent bg-accent text-bg"
           : "border-border bg-surface-high text-text-muted hover:text-text-primary")
