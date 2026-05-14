@@ -151,6 +151,49 @@ export async function scoreMatch(
   return { ok: true, scored: plan.predictionUpdates.length };
 }
 
+/**
+ * Symmetric undo of `scoreMatch`. Nulls `points_awarded` on every
+ * prediction for the match, then recomputes `total_points` for every
+ * affected user. Intended for test cleanup — restoring a match's status
+ * does NOT clear stranded prediction points because `scoreMatch` short-
+ * circuits on non-terminal statuses. Without this, an e2e run that flips
+ * a real seed match to `finished` will permanently stamp `points_awarded`
+ * on every user who already predicted that match, regardless of whose
+ * account is being tested.
+ */
+export async function clearMatchScoring(
+  supabase: SupabaseClient,
+  match_id: string,
+): Promise<{ ok: true; cleared: number } | { ok: false; reason: string }> {
+  const { data: preds, error: predsErr } = await supabase
+    .from("predictions")
+    .select("user_id")
+    .eq("match_id", match_id)
+    .not("points_awarded", "is", null);
+  if (predsErr) {
+    return { ok: false, reason: `predictions lookup: ${predsErr.message}` };
+  }
+  if (!preds || preds.length === 0) return { ok: true, cleared: 0 };
+
+  const affected = Array.from(new Set(preds.map((p) => p.user_id as string)));
+
+  const { error: clearErr } = await supabase
+    .from("predictions")
+    .update({ points_awarded: null })
+    .eq("match_id", match_id);
+  if (clearErr) {
+    return { ok: false, reason: `prediction clear: ${clearErr.message}` };
+  }
+
+  for (const user_id of affected) {
+    const out = await recomputeUserTotal(supabase, user_id);
+    if (out.ok === false) {
+      return { ok: false, reason: `recompute ${user_id}: ${out.reason}` };
+    }
+  }
+  return { ok: true, cleared: preds.length };
+}
+
 async function recomputeUserTotal(
   supabase: SupabaseClient,
   user_id: string,

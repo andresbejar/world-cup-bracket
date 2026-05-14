@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { scoreMatch } from "@/lib/scoring-runtime";
+import { scoreMatch, clearMatchScoring } from "@/lib/scoring-runtime";
 import { adminClient, listGroupMatches } from "./helpers";
 import { TEST_USER_EMAIL } from "./global-setup";
 
@@ -52,10 +52,45 @@ test.describe("scoring loop", () => {
   });
 
   test.afterAll(async () => {
+    const admin = adminClient();
+    // scoreMatch operates on every prediction for the match, not just the
+    // test user's. Any non-test user with a prior prediction on these
+    // seed matches would otherwise be left with stranded points_awarded +
+    // a stale total_points. Clear before restoring status — once status
+    // flips back to `scheduled`, scoreMatch's early-return at the status
+    // check means a re-run won't undo the damage.
+    for (const snap of mutatedMatches) {
+      const out = await clearMatchScoring(admin, snap.id);
+      if (out.ok === false) {
+        console.error(`[e2e teardown] clearMatchScoring ${snap.id}:`, out.reason);
+      }
+    }
+    // Belt-and-suspenders assertion: no prediction on a mutated match
+    // may carry a non-null points_awarded after cleanup. Catches future
+    // regressions where someone adds another scoring path that bypasses
+    // clearMatchScoring.
+    if (mutatedMatches.length > 0) {
+      const { data: leftover, error: leftoverErr } = await admin
+        .from("predictions")
+        .select("match_id, user_id")
+        .in(
+          "match_id",
+          mutatedMatches.map((m) => m.id),
+        )
+        .not("points_awarded", "is", null);
+      if (leftoverErr) {
+        console.error("[e2e teardown] leftover check failed:", leftoverErr);
+      } else if (leftover && leftover.length > 0) {
+        throw new Error(
+          `e2e teardown left ${leftover.length} stranded prediction scoring rows: ${JSON.stringify(
+            leftover,
+          )}`,
+        );
+      }
+    }
     // Restore every match row we mutated. Match-row drift across spec
     // runs would corrupt downstream specs (and surface real-team_ids
     // in the bracket where the seed expects nulls).
-    const admin = adminClient();
     for (const snap of mutatedMatches) {
       await admin
         .from("matches")
@@ -68,7 +103,9 @@ test.describe("scoring loop", () => {
         .eq("id", snap.id);
     }
     mutatedMatches.length = 0;
-    // Also reset the user's points so downstream specs see a clean state.
+    // The test user's row is gone via clearMatchScoring's null + recompute,
+    // but the prior beforeAll also nukes any predictions to start clean —
+    // mirror that here for symmetry across spec runs.
     await admin.from("predictions").delete().eq("user_id", testUserId);
     await admin.from("users").update({ total_points: 0 }).eq("id", testUserId);
   });
