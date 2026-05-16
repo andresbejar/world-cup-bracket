@@ -35,6 +35,9 @@ const USER_SUFFIX = (process.env.E2E_USER_SUFFIX ?? "").trim();
 export const TEST_USER_EMAIL = USER_SUFFIX
   ? `e2e-test-${USER_SUFFIX}@worldcupbracket.local`
   : "e2e-test@worldcupbracket.local";
+// users.username is globally unique; without the suffix both matrix
+// jobs would race on `e2e-tester` and one would hit 23505.
+const TEST_USERNAME = USER_SUFFIX ? `e2e-tester-${USER_SUFFIX}` : "e2e-tester";
 const STATE_PATH = "e2e/.auth/user.json";
 
 export default async function globalSetup(config: FullConfig) {
@@ -91,7 +94,7 @@ export default async function globalSetup(config: FullConfig) {
   const upsert = await admin
     .from("users")
     .upsert(
-      { id: created.data.user.id, email: TEST_USER_EMAIL, username: "e2e-tester" },
+      { id: created.data.user.id, email: TEST_USER_EMAIL, username: TEST_USERNAME },
       { onConflict: "id" },
     );
   if (upsert.error) {
