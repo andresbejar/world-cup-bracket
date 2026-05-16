@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
+import { slugifyUsername } from "@/lib/username";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -96,18 +97,6 @@ async function ensureProfileDefaults(user: {
   }
 }
 
-function slugify(input: string): string {
-  return (
-    input
-      .normalize("NFKD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 24) || "player"
-  );
-}
-
 function randomSuffix(): string {
   // 4 hex chars from crypto.getRandomValues — collision-resistant enough
   // for a 5–50 person pool.
@@ -122,7 +111,14 @@ async function pickAvailableUsername(
   admin: AdminClient,
   displayName: string,
 ): Promise<string> {
-  const base = slugify(displayName);
+  // slugifyUsername returns null when the Google name slugifies to
+  // something the lib/username validator rejects (empty, too short,
+  // blocklisted slur after leet-normalization). Fall back to "player"
+  // so the auto-flow always produces a renderable name; the user can
+  // rename on /profile. This is the "if Google profile name fails,
+  // prompt user for one" path from APT-40's AC — the prompt surface is
+  // the profile page reachable via the top-bar avatar.
+  const base = slugifyUsername(displayName) ?? "player";
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = attempt === 0 ? base : `${base}-${randomSuffix()}`;
     const { data, error } = await admin

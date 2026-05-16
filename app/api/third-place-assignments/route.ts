@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveUser } from "@/lib/auth-guard";
 import { checkRoundLock } from "@/lib/lock-check";
 
 // POST /api/third-place-assignments
@@ -13,12 +14,11 @@ import { checkRoundLock } from "@/lib/lock-check";
 // where and the bet is decided.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  const guard = await requireActiveUser(supabase);
+  if ("error" in guard) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
   }
+  const { user } = guard;
 
   let body: unknown;
   try {
