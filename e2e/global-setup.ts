@@ -24,7 +24,17 @@ import { dirname } from "node:path";
 // in a real browser) and produces a session shape indistinguishable
 // from what `/auth/callback` writes after a real OAuth round-trip.
 
-export const TEST_USER_EMAIL = "e2e-test@worldcupbracket.local";
+// Per-matrix-job isolation. CI sets E2E_USER_SUFFIX="${{ matrix.browser }}"
+// so the chromium and webkit jobs each provision their own user; they
+// otherwise race against a shared `e2e-test@worldcupbracket.local` row
+// in the same Supabase project — webkit's teardown deletes the user
+// mid-run for chromium, cascading 5+ spec failures (APT-47).
+// Local runs (no env var, sequential project execution) keep the
+// historical default email.
+const USER_SUFFIX = (process.env.E2E_USER_SUFFIX ?? "").trim();
+export const TEST_USER_EMAIL = USER_SUFFIX
+  ? `e2e-test-${USER_SUFFIX}@worldcupbracket.local`
+  : "e2e-test@worldcupbracket.local";
 const STATE_PATH = "e2e/.auth/user.json";
 
 export default async function globalSetup(config: FullConfig) {

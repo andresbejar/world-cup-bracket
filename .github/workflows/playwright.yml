@@ -2,9 +2,15 @@ name: Playwright E2E
 
 # Runs Playwright on every PR + every push to main. The same Supabase
 # project the deployed app uses gets hit by the e2e suite — global-setup
-# provisions a dedicated test user (e2e-test@worldcupbracket.local) and
-# teardown deletes it so prod data isn't polluted. The seed (matches /
-# teams / rounds / bracket_slots) is read-only from the test's POV.
+# provisions a dedicated test user (e2e-test-<browser>@worldcupbracket.local
+# in CI, plain e2e-test@worldcupbracket.local locally) and teardown
+# deletes it so prod data isn't polluted. The seed (matches / teams /
+# rounds / bracket_slots) is read-only from the test's POV.
+#
+# Per-browser email is mandatory in CI: chromium and webkit jobs run in
+# parallel against the same Supabase project; without isolation their
+# setup/teardown race and one job's teardown deletes the other's user
+# mid-run (APT-47).
 #
 # Required GitHub secrets:
 #   NEXT_PUBLIC_SUPABASE_URL
@@ -41,6 +47,10 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       E2E_PORT: ${{ vars.E2E_PORT || '3100' }}
+      # Per-browser isolation — global-setup builds the test user email
+      # as e2e-test-${E2E_USER_SUFFIX}@worldcupbracket.local. See file
+      # header for the race this prevents.
+      E2E_USER_SUFFIX: ${{ matrix.browser }}
 
     steps:
       - uses: actions/checkout@v4
