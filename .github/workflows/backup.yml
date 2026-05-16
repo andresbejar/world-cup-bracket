@@ -56,7 +56,11 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
-          pg_dump --version
+          # On Ubuntu /usr/bin/pg_dump is the postgresql-common pg_wrapper
+          # which can resolve to the older client-16 even after PGDG
+          # installs 17. Print both to confirm and use the absolute PG17
+          # path in the dump step below.
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Dump public schema, gzip + GPG-encrypt
         env:
@@ -82,7 +86,12 @@ jobs:
           #                      a partial restore over a live DB is safe.
           # Output is plain SQL so a human can inspect / cherry-pick rows during
           # an incident. pg_dump's custom format is faster to restore but opaque.
-          pg_dump "$SUPABASE_DB_URL" \
+          # Absolute path to the PG17 binary — /usr/bin/pg_dump is the
+          # postgresql-common pg_wrapper which has been observed resolving
+          # to the Ubuntu-default client-16 even after PGDG installs 17,
+          # producing a "server version mismatch" error against Supabase's
+          # PG 17.6 servers.
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" \
             --no-owner --no-acl --clean --if-exists \
             --schema=public \
             > "$OUT"
