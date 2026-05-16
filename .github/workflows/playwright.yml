@@ -47,10 +47,14 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       E2E_PORT: ${{ vars.E2E_PORT || '3100' }}
-      # Per-browser isolation — global-setup builds the test user email
-      # as e2e-test-${E2E_USER_SUFFIX}@worldcupbracket.local. See file
-      # header for the race this prevents.
-      E2E_USER_SUFFIX: ${{ matrix.browser }}
+      # Per-run isolation — global-setup builds the test user email
+      # as e2e-test-${E2E_USER_SUFFIX}@worldcupbracket.local.
+      # browser + run_id + run_attempt is globally unique across:
+      #   - the chromium/webkit matrix pair within one workflow run
+      #   - concurrent workflow runs (different PRs racing CI)
+      #   - retried jobs (run_attempt bumps)
+      # See file header for the races this prevents.
+      E2E_USER_SUFFIX: ${{ matrix.browser }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - uses: actions/checkout@v4
