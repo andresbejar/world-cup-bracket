@@ -26,9 +26,17 @@ on:
     branches: [main]
 
 concurrency:
-  # One run per branch — kill stale runs when a new commit lands.
-  group: playwright-${{ github.ref }}
-  cancel-in-progress: true
+  # Single global queue — only one Playwright workflow run executes at a
+  # time across the whole repo. The suite mutates shared seed rows
+  # (rounds.locked_at, matches.status) on a single Supabase project, so
+  # concurrent runs (matrix pair OR cross-PR) race each other's
+  # afterAll restorations and leave the seed in a dirty state.
+  # cancel-in-progress: false → new runs queue instead of preempting,
+  # so stale-but-running CI on an old commit doesn't get cancelled when
+  # a new commit lands. Acceptable for a hobby project where CI runtime
+  # (~4 min) is small.
+  group: playwright-shared-supabase
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -37,6 +45,14 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      # Serialize chromium → webkit within the same workflow run. Both
+      # jobs hit the same Supabase project and the same seed rows; if
+      # they ran in parallel, the scoring-loop and round-lock specs would
+      # mutate matches.status / rounds.locked_at simultaneously and one
+      # would clobber the other's restoration. The cross-workflow
+      # concurrency group above plus this max-parallel: 1 give end-to-end
+      # serial execution against the shared DB.
+      max-parallel: 1
       matrix:
         # Both browsers from APT-33 AC. WebKit catches Safari-specific
         # papercuts (iOS Safari is the family-beta hotspot per APT-38).
