@@ -80,7 +80,11 @@ export function TopBar({ active, username, avatar, points, email }: Props) {
             </span>{" "}
             PTS
           </span>
-          <div className="flex items-center gap-3 rounded-full border border-border bg-surface py-1.5 pl-1.5 pr-3">
+          <Link
+            href="/profile"
+            aria-label="Edit profile"
+            className="flex items-center gap-3 rounded-full border border-border bg-surface py-1.5 pl-1.5 pr-3 transition-colors duration-[var(--motion-micro)] hover:border-accent-muted"
+          >
             {avatar ? (
               <Image
                 src={avatar}
@@ -98,13 +102,10 @@ export function TopBar({ active, username, avatar, points, email }: Props) {
                 {username.slice(0, 2)}
               </div>
             )}
-            <span
-              className="hidden text-sm sm:inline"
-              title={email}
-            >
+            <span className="hidden text-sm sm:inline" title={email}>
               {username}
             </span>
-          </div>
+          </Link>
           <SignOutButton />
         </div>
       </div>
