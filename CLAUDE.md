@@ -52,6 +52,34 @@ Key routing rules:
 - **Playwright** for E2E. 5 critical paths required before production deploy: signup, bracket-build, round-lock, match-finishes-leaderboard-updates, mobile-responsive.
 - See the test plan at `designs/andresbejar-main-eng-review-test-plan-20260509-164432.md`.
 
+## Backups & Recovery
+
+Daily encrypted `pg_dump` of the `public` schema runs at 05:13 UTC via `.github/workflows/backup.yml`. Output is GPG-symmetric-encrypted (AES-256) and uploaded as a private workflow artifact with 30-day retention. Two repo secrets required: `SUPABASE_DB_URL` (direct connection, port 5432) and `BACKUP_GPG_PASSPHRASE` (also save to a password manager — losing it loses the backups).
+
+If a bad migration or accidental DELETE corrupts data mid-tournament:
+
+```bash
+# 1. Find the most recent successful backup run.
+gh run list --workflow=backup.yml --status=success --limit=5
+
+# 2. Download the encrypted artifact (substitute the run ID).
+gh run download <run-id> --name "supabase-backup-<run-id>"
+
+# 3. Decrypt with the passphrase from your password manager.
+gpg --batch --pinentry-mode loopback --passphrase "$BACKUP_GPG_PASSPHRASE" \
+  --decrypt supabase-*.sql.gpg > restore.sql
+
+# 4. Inspect — confirm the right rows are present before applying.
+grep -c "INSERT INTO public.predictions" restore.sql
+
+# 5a. Full restore (re-creates public schema; --clean DROPs first).
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 < restore.sql
+
+# 5b. Surgical restore (preferred — paste only the rows you need into psql).
+```
+
+If Supabase Point-in-Time Recovery is enabled on the project (Pro plan), prefer that over the dump: it captures every WAL segment and rewinds with no manual SQL. The dump is the cheap fallback. Either way, **never** restore over a live tournament DB without checkpointing the current state first (`pg_dump` it again, then restore).
+
 ## Build order
 
 This is week 0 (2026-05-09). Hard deadline is 2026-06-11 (~30 days).
