@@ -58,7 +58,12 @@ export default async function ProfilePage() {
 
         {isAdmin ? (
           <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.08em] text-accent">
-            ADMIN — moderation tools at <code>/api/admin/moderate</code>
+            ADMIN — moderation tools at <code>/api/admin/moderate</code>;
+            confirm prize-pool payments on{" "}
+            <a href="/pool" className="underline hover:text-text-primary">
+              /pool
+            </a>
+            .
           </p>
         ) : null}
       </main>
