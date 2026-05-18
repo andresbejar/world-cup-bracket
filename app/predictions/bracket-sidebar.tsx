@@ -359,9 +359,7 @@ function MatchBlock({
   const awayY = top + SLOT_H + 2;
   return (
     <g>
-      <title>
-        {roundLabel} · M{matchIndex} — {home ?? "—"} vs {away ?? "—"}
-      </title>
+      <title>{`${roundLabel} · M${matchIndex} — ${home ?? "—"} vs ${away ?? "—"}`}</title>
       <SlotBox x={x} y={homeY} width={COL_W} height={SLOT_H} team={home} />
       <SlotBox x={x} y={awayY} width={COL_W} height={SLOT_H} team={away} />
     </g>
@@ -454,7 +452,7 @@ function ThirdPlaceBlock({
       >
         3RD
       </text>
-      <title>3rd-place playoff — {home ?? "—"} vs {away ?? "—"}</title>
+      <title>{`3rd-place playoff — ${home ?? "—"} vs ${away ?? "—"}`}</title>
       <SlotBox
         x={blockX}
         y={blockTop}
