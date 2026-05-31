@@ -242,7 +242,7 @@ export function PoolClient(props: Props) {
                   onChange={(e) => setNotes(e.target.value)}
                   rows={2}
                   maxLength={280}
-                  placeholder="e.g. sent via Wise on Friday"
+                  placeholder="e.g. sent via PayPal on Friday"
                   className="mt-1 w-full rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-text-primary outline-none focus:border-accent-muted"
                 />
               </label>
