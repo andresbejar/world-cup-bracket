@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireActiveUser } from "@/lib/auth-guard";
-import { readPoolConfig } from "@/lib/pool/config";
+import { readPoolConfig, enabledMethods } from "@/lib/pool/config";
 import { isPaymentMethod } from "@/lib/pool/types";
 
 // POST /api/pool/claim
@@ -46,16 +46,16 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  // For methods with no env handle configured, refuse — prevents users
-  // from claiming via a method we don't actually accept.
-  if (r.method !== "other") {
-    const handle = cfg.config.methods[r.method];
-    if (!handle) {
-      return NextResponse.json(
-        { error: `${r.method} is not enabled for this pool` },
-        { status: 400 },
-      );
-    }
+  // Enablement must match exactly what the /pool UI offers — enabledMethods()
+  // is the single source of truth. Checking cfg.config.methods[...] here
+  // diverged from the UI: PayPal is enabled by a pool URL alone (no paypal.me
+  // handle), so a handle-only check rejected valid PayPal claims even though
+  // the tile rendered. (APT-48 bug.)
+  if (!enabledMethods(cfg.config).includes(r.method)) {
+    return NextResponse.json(
+      { error: `${r.method} is not enabled for this pool` },
+      { status: 400 },
+    );
   }
   let notes: string | null = null;
   if (r.notes !== undefined && r.notes !== null) {
