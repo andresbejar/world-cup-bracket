@@ -61,6 +61,8 @@ The E2E suite mutates `matches.status` / `rounds.locked_at`, so it runs against 
 
 `.env.test` = e2e test project. `.env.local` = prod app + operator scripts (`reset-match-results.ts`, `dev-login.ts` keep targeting prod).
 
+**Build-time gotcha:** Next inlines `NEXT_PUBLIC_*` at **build** time (server/middleware bundle included), so the running app's Supabase target is baked by `next build`, not by runtime env. A build made against `.env.local` (prod) served by `next start` would make the app talk to prod while `global-setup` mints its session in the test DB — the project-scoped auth cookie wouldn't match and `/predictions` bounces to `/sign-in`. To prevent this, `playwright.config.ts`'s `webServer` runs `next build && next start` **locally** (rebuilding against the loaded `.env.test`); CI skips the rebuild because its workflow already runs `npm run build` with the `TEST_SUPABASE_*` env in a separate step. Net: just run `npm run e2e` — the build is handled for you.
+
 **One-time provisioning of the test project:**
 
 ```bash
