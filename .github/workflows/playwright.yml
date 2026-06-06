@@ -1,21 +1,25 @@
 name: Playwright E2E
 
-# Runs Playwright on every PR + every push to main. The same Supabase
-# project the deployed app uses gets hit by the e2e suite — global-setup
-# provisions a dedicated test user (e2e-test-<browser>@worldcupbracket.local
-# in CI, plain e2e-test@worldcupbracket.local locally) and teardown
-# deletes it so prod data isn't polluted. The seed (matches / teams /
-# rounds / bracket_slots) is read-only from the test's POV.
+# Runs Playwright on every PR + every push to main. The e2e suite hits a
+# DEDICATED test Supabase project (NOT prod) — APT-52. The suite mutates
+# matches.status / rounds.locked_at, which is unsafe against the live
+# tournament DB once play starts (2026-06-11). The e2e admin client also
+# enforces this in code via assertTestDatabase (e2e/helpers.ts), which
+# refuses to run against the prod project ref.
 #
-# Per-browser email is mandatory in CI: chromium and webkit jobs run in
-# parallel against the same Supabase project; without isolation their
-# setup/teardown race and one job's teardown deletes the other's user
-# mid-run (APT-47).
+# global-setup provisions a test user (e2e-test-<browser>@worldcupbracket.local
+# in CI, plain e2e-test@worldcupbracket.local locally) and teardown deletes
+# it. The seed (matches / teams / rounds / bracket_slots) is shared per
+# project, so this still runs serially (see concurrency + max-parallel below);
+# the test project is one shared DB across concurrent runs, exactly like
+# prod was, so APT-47's serialization is still required.
 #
-# Required GitHub secrets:
-#   NEXT_PUBLIC_SUPABASE_URL
-#   NEXT_PUBLIC_SUPABASE_ANON_KEY
-#   SUPABASE_SERVICE_ROLE_KEY
+# Required GitHub secrets (the dedicated test project's creds):
+#   TEST_SUPABASE_URL
+#   TEST_SUPABASE_ANON_KEY
+#   TEST_SUPABASE_SERVICE_ROLE_KEY
+# These are mapped into the standard NEXT_PUBLIC_* / SERVICE_ROLE env names
+# below so the app build + runtime point at the test project.
 #
 # Optional repo variable:
 #   E2E_PORT (default 3100) — port the test webServer binds to.
@@ -59,9 +63,12 @@ jobs:
         browser: [chromium, webkit]
 
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # Dedicated test project (APT-52), mapped into the standard env names
+      # the app + e2e read. Never point these at the prod project — the
+      # assertTestDatabase guard (e2e/helpers.ts) will hard-fail if you do.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
       E2E_PORT: ${{ vars.E2E_PORT || '3100' }}
       # Per-run isolation — global-setup builds the test user email
       # as e2e-test-${E2E_USER_SUFFIX}@worldcupbracket.local.

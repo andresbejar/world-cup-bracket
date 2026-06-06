@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { resetStrandedMatchResults } from "./helpers";
+import { assertTestDatabase, resetStrandedMatchResults } from "./helpers";
 
 // Auth bootstrap for every E2E run. The flow:
 //
@@ -50,6 +50,10 @@ export default async function globalSetup(config: FullConfig) {
       "global-setup: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY must all be set",
     );
   }
+
+  // Refuse to provision/mutate the live tournament DB — e2e must target the
+  // dedicated test project (APT-52). Fails before any admin client is built.
+  assertTestDatabase(supabaseUrl);
 
   const baseURL = config.projects[0]?.use?.baseURL;
   if (!baseURL) {
