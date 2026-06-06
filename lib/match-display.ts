@@ -24,3 +24,28 @@ export function hasRealResult(
 ): boolean {
   return m.status === "finished" && new Date(m.scheduled_at).getTime() <= now;
 }
+
+/**
+ * Compact "Jun 28, 12:00 PM PDT" rendering of a kickoff timestamp.
+ *
+ * Kickoffs are stored in UTC; this renders them in the viewer's local zone
+ * and appends the zone abbreviation (`timeZoneName: "short"`) so a time is
+ * never ambiguous across the US/CA/MX timezones the Cup spans. `toLocaleString`
+ * separates the time from AM/PM with a narrow no-break space (U+202F); we
+ * normalize it to a regular space for predictable, copy-pasteable output.
+ *
+ * `timeZone` is injectable so tests can pin a zone deterministically; in the
+ * app it's omitted, falling back to the runtime's local zone.
+ */
+export function shortDateTime(iso: string, timeZone?: string): string {
+  return new Date(iso)
+    .toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+      ...(timeZone ? { timeZone } : {}),
+    })
+    .replace(/ /g, " ");
+}

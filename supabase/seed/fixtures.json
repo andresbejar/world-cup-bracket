@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-06T04:23:06.229Z",
+  "generated_at": "2026-06-06T18:08:27.763Z",
   "teams": [
     {
       "id": "BEL",
@@ -420,14 +420,14 @@
       "name": "Round of 16",
       "stage": "r16",
       "matchday": null,
-      "deadline_at": "2026-07-04T15:00:00.000Z"
+      "deadline_at": "2026-07-04T13:00:00.000Z"
     },
     {
       "id": "qf",
       "name": "Quarter-finals",
       "stage": "qf",
       "matchday": null,
-      "deadline_at": "2026-07-09T15:00:00.000Z"
+      "deadline_at": "2026-07-09T16:00:00.000Z"
     },
     {
       "id": "sf",
@@ -441,7 +441,7 @@
       "name": "Third-place playoff",
       "stage": "third_place",
       "matchday": null,
-      "deadline_at": "2026-07-18T15:00:00.000Z"
+      "deadline_at": "2026-07-18T17:00:00.000Z"
     },
     {
       "id": "final",
@@ -1715,7 +1715,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-E",
       "away_slot_id": "r32-best-3rd-vs-E",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-06-29T20:30:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1723,7 +1723,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-F",
       "away_slot_id": "r32-runner-up-C",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-06-30T01:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1731,7 +1731,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-C",
       "away_slot_id": "r32-runner-up-F",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-06-29T17:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1739,7 +1739,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-I",
       "away_slot_id": "r32-best-3rd-vs-I",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-06-30T21:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1747,7 +1747,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-runner-up-E",
       "away_slot_id": "r32-runner-up-I",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-06-30T17:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1755,7 +1755,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-A",
       "away_slot_id": "r32-best-3rd-vs-A",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-01T01:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1763,7 +1763,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-L",
       "away_slot_id": "r32-best-3rd-vs-L",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-01T16:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1771,7 +1771,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-D",
       "away_slot_id": "r32-best-3rd-vs-D",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-02T00:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1779,7 +1779,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-G",
       "away_slot_id": "r32-best-3rd-vs-G",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-01T20:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1787,7 +1787,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-runner-up-K",
       "away_slot_id": "r32-runner-up-L",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-02T23:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1795,7 +1795,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-H",
       "away_slot_id": "r32-runner-up-J",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-02T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1803,7 +1803,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-B",
       "away_slot_id": "r32-best-3rd-vs-B",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-03T03:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1811,7 +1811,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-J",
       "away_slot_id": "r32-runner-up-H",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-03T22:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1819,7 +1819,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-winner-K",
       "away_slot_id": "r32-best-3rd-vs-K",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-04T01:30:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1827,7 +1827,7 @@
       "round_id": "r32",
       "home_slot_id": "r32-runner-up-D",
       "away_slot_id": "r32-runner-up-G",
-      "scheduled_at": "2026-06-28T19:00:00Z",
+      "scheduled_at": "2026-07-03T18:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1835,7 +1835,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-2-winner",
       "away_slot_id": "r16-r32-match-5-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-04T21:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1843,7 +1843,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-1-winner",
       "away_slot_id": "r16-r32-match-3-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-04T17:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1851,7 +1851,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-4-winner",
       "away_slot_id": "r16-r32-match-6-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-05T20:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1859,7 +1859,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-7-winner",
       "away_slot_id": "r16-r32-match-8-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-06T00:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1867,7 +1867,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-11-winner",
       "away_slot_id": "r16-r32-match-12-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-06T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1875,7 +1875,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-9-winner",
       "away_slot_id": "r16-r32-match-10-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-07T00:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1883,7 +1883,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-14-winner",
       "away_slot_id": "r16-r32-match-16-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-07T16:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1891,7 +1891,7 @@
       "round_id": "r16",
       "home_slot_id": "r16-r32-match-13-winner",
       "away_slot_id": "r16-r32-match-15-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
+      "scheduled_at": "2026-07-07T20:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1899,7 +1899,7 @@
       "round_id": "qf",
       "home_slot_id": "qf-r16-match-1-winner",
       "away_slot_id": "qf-r16-match-2-winner",
-      "scheduled_at": "2026-07-09T19:00:00Z",
+      "scheduled_at": "2026-07-09T20:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1907,7 +1907,7 @@
       "round_id": "qf",
       "home_slot_id": "qf-r16-match-5-winner",
       "away_slot_id": "qf-r16-match-6-winner",
-      "scheduled_at": "2026-07-09T19:00:00Z",
+      "scheduled_at": "2026-07-10T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1915,7 +1915,7 @@
       "round_id": "qf",
       "home_slot_id": "qf-r16-match-3-winner",
       "away_slot_id": "qf-r16-match-4-winner",
-      "scheduled_at": "2026-07-09T19:00:00Z",
+      "scheduled_at": "2026-07-11T21:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1923,7 +1923,7 @@
       "round_id": "qf",
       "home_slot_id": "qf-r16-match-7-winner",
       "away_slot_id": "qf-r16-match-8-winner",
-      "scheduled_at": "2026-07-09T19:00:00Z",
+      "scheduled_at": "2026-07-12T01:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1939,7 +1939,7 @@
       "round_id": "sf",
       "home_slot_id": "sf-qf-match-3-winner",
       "away_slot_id": "sf-qf-match-4-winner",
-      "scheduled_at": "2026-07-14T19:00:00Z",
+      "scheduled_at": "2026-07-15T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
@@ -1947,7 +1947,7 @@
       "round_id": "third_place",
       "home_slot_id": "third_place-sf-match-1-loser",
       "away_slot_id": "third_place-sf-match-2-loser",
-      "scheduled_at": "2026-07-18T19:00:00Z",
+      "scheduled_at": "2026-07-18T21:00:00Z",
       "apifootball_fixture_id": null
     },
     {

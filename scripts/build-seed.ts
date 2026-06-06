@@ -30,20 +30,63 @@ const LEAGUE_ID = 1;
 const SEASON = 2026;
 
 // ============================================================
-// Knockout schedule (FIFA's announced 2026 dates).
-// First-match dates per round; exact kickoff times TBD by FIFA.
-// Using 19:00 UTC (a common WC kickoff slot) as a placeholder; refine
-// when FIFA publishes the final fixture list, or when api-sports
-// populates these fixtures and we re-run this script.
+// Knockout schedule — FIFA's published 2026 master schedule (matches
+// 73–104), keyed by the stable internal match id from lib/bracket-structure
+// (R32 idx 1..16 → FIFA 73..88, R16 → 89..96, QF → 97..100, SF → 101..102,
+// third-place → 103, final → 104). Kickoffs are stored in UTC; the trailing
+// comment on each line is the local stadium time + venue for reference.
+// Source: en.wikipedia.org/wiki/2026_FIFA_World_Cup_knockout_stage
+// (cross-checked against the day-by-day Sky Sports / NBC schedules).
 // ============================================================
-const KNOCKOUT_FIRST_MATCH = {
-  r32:         "2026-06-28T19:00:00Z",
-  r16:         "2026-07-04T19:00:00Z",
-  qf:          "2026-07-09T19:00:00Z",
-  sf:          "2026-07-14T19:00:00Z",
-  third_place: "2026-07-18T19:00:00Z",
-  final:       "2026-07-19T19:00:00Z",
-} as const;
+const KNOCKOUT_SCHEDULE: Record<string, string> = {
+  // Round of 32 (FIFA 73–88) · Jun 28 – Jul 4
+  "r32-1":  "2026-06-28T19:00:00Z", // 73  12:00 PT  Inglewood
+  "r32-2":  "2026-06-29T20:30:00Z", // 74   4:30 ET  Foxborough
+  "r32-3":  "2026-06-30T01:00:00Z", // 75   7:00 CT  Guadalupe (Monterrey)
+  "r32-4":  "2026-06-29T17:00:00Z", // 76  12:00 CT  Houston
+  "r32-5":  "2026-06-30T21:00:00Z", // 77   5:00 ET  East Rutherford
+  "r32-6":  "2026-06-30T17:00:00Z", // 78  12:00 CT  Arlington
+  "r32-7":  "2026-07-01T01:00:00Z", // 79   7:00 CT  Mexico City
+  "r32-8":  "2026-07-01T16:00:00Z", // 80  12:00 ET  Atlanta
+  "r32-9":  "2026-07-02T00:00:00Z", // 81   5:00 PT  Santa Clara
+  "r32-10": "2026-07-01T20:00:00Z", // 82   1:00 PT  Seattle
+  "r32-11": "2026-07-02T23:00:00Z", // 83   7:00 ET  Toronto
+  "r32-12": "2026-07-02T19:00:00Z", // 84  12:00 PT  Inglewood
+  "r32-13": "2026-07-03T03:00:00Z", // 85   8:00 PT  Vancouver
+  "r32-14": "2026-07-03T22:00:00Z", // 86   6:00 ET  Miami Gardens
+  "r32-15": "2026-07-04T01:30:00Z", // 87   8:30 CT  Kansas City
+  "r32-16": "2026-07-03T18:00:00Z", // 88   1:00 CT  Arlington
+  // Round of 16 (FIFA 89–96) · Jul 4 – Jul 7
+  "r16-1":  "2026-07-04T21:00:00Z", // 89   5:00 ET  Philadelphia
+  "r16-2":  "2026-07-04T17:00:00Z", // 90  12:00 CT  Houston
+  "r16-3":  "2026-07-05T20:00:00Z", // 91   4:00 ET  East Rutherford
+  "r16-4":  "2026-07-06T00:00:00Z", // 92   6:00 CT  Mexico City
+  "r16-5":  "2026-07-06T19:00:00Z", // 93   2:00 CT  Arlington
+  "r16-6":  "2026-07-07T00:00:00Z", // 94   5:00 PT  Seattle
+  "r16-7":  "2026-07-07T16:00:00Z", // 95  12:00 ET  Atlanta
+  "r16-8":  "2026-07-07T20:00:00Z", // 96   1:00 PT  Vancouver
+  // Quarter-finals (FIFA 97–100) · Jul 9 – Jul 12
+  "qf-1":   "2026-07-09T20:00:00Z", // 97   4:00 ET  Foxborough
+  "qf-2":   "2026-07-10T19:00:00Z", // 98  12:00 PT  Inglewood
+  "qf-3":   "2026-07-11T21:00:00Z", // 99   5:00 ET  Miami Gardens
+  "qf-4":   "2026-07-12T01:00:00Z", // 100  8:00 CT  Kansas City
+  // Semi-finals (FIFA 101–102) · Jul 14 – Jul 15
+  "sf-1":   "2026-07-14T19:00:00Z", // 101  2:00 CT  Arlington
+  "sf-2":   "2026-07-15T19:00:00Z", // 102  3:00 ET  Atlanta
+  // Third-place play-off + Final
+  "third-place": "2026-07-18T21:00:00Z", // 103  5:00 ET  Miami Gardens
+  "final":       "2026-07-19T19:00:00Z", // 104  3:00 ET  East Rutherford
+};
+
+// Earliest kickoff of a knockout round (ISO strings are all UTC 'Z',
+// so lexical sort == chronological).
+function earliestKickoff(roundId: string): string {
+  const times = ALL_KNOCKOUT_MATCHES
+    .filter((km) => km.round_id === roundId)
+    .map((km) => KNOCKOUT_SCHEDULE[km.id]);
+  if (times.length === 0) throw new Error(`No knockout schedule for round ${roundId}`);
+  return [...times].sort()[0];
+}
 
 // 4 hours before first match → prediction-edit deadline.
 function deadlineFromFirstMatch(iso: string): string {
@@ -227,17 +270,17 @@ async function main() {
 
   const knockoutRounds: SeedRound[] = [
     { id: "r32", name: "Round of 32", stage: "r32", matchday: null,
-      deadline_at: deadlineFromFirstMatch(KNOCKOUT_FIRST_MATCH.r32) },
+      deadline_at: deadlineFromFirstMatch(earliestKickoff("r32")) },
     { id: "r16", name: "Round of 16", stage: "r16", matchday: null,
-      deadline_at: deadlineFromFirstMatch(KNOCKOUT_FIRST_MATCH.r16) },
+      deadline_at: deadlineFromFirstMatch(earliestKickoff("r16")) },
     { id: "qf", name: "Quarter-finals", stage: "qf", matchday: null,
-      deadline_at: deadlineFromFirstMatch(KNOCKOUT_FIRST_MATCH.qf) },
+      deadline_at: deadlineFromFirstMatch(earliestKickoff("qf")) },
     { id: "sf", name: "Semi-finals", stage: "sf", matchday: null,
-      deadline_at: deadlineFromFirstMatch(KNOCKOUT_FIRST_MATCH.sf) },
+      deadline_at: deadlineFromFirstMatch(earliestKickoff("sf")) },
     { id: "third_place", name: "Third-place playoff", stage: "third_place", matchday: null,
-      deadline_at: deadlineFromFirstMatch(KNOCKOUT_FIRST_MATCH.third_place) },
+      deadline_at: deadlineFromFirstMatch(earliestKickoff("third_place")) },
     { id: "final", name: "Final", stage: "final", matchday: null,
-      deadline_at: deadlineFromFirstMatch(KNOCKOUT_FIRST_MATCH.final) },
+      deadline_at: deadlineFromFirstMatch(earliestKickoff("final")) },
   ];
 
   const rounds = [...groupRounds, ...knockoutRounds];
@@ -293,12 +336,21 @@ async function main() {
     }];
   });
 
+  const missingSchedule = ALL_KNOCKOUT_MATCHES.filter(
+    (km) => !KNOCKOUT_SCHEDULE[km.id],
+  );
+  if (missingSchedule.length > 0) {
+    throw new Error(
+      `KNOCKOUT_SCHEDULE missing kickoff(s) for: ${missingSchedule.map((km) => km.id).join(", ")}`,
+    );
+  }
+
   const knockoutMatches: SeedMatch[] = ALL_KNOCKOUT_MATCHES.map((km) => ({
     id: `m-${km.id}`,
     round_id: km.round_id,
     home_slot_id: `${km.round_id}-${km.home_slot_label}`,
     away_slot_id: `${km.round_id}-${km.away_slot_label}`,
-    scheduled_at: KNOCKOUT_FIRST_MATCH[km.round_id],
+    scheduled_at: KNOCKOUT_SCHEDULE[km.id],
     apifootball_fixture_id: null,
   }));
 
