@@ -3,10 +3,8 @@
 import { useState } from "react";
 import { type GroupStandings } from "@/lib/bracket";
 import {
-  QF_MATCHES,
-  R16_MATCHES,
   R32_MATCHES,
-  SF_MATCHES,
+  BRACKET_DISPLAY_ORDER,
   FINAL_MATCH,
   THIRD_PLACE_MATCH,
 } from "@/lib/bracket-structure";
@@ -230,8 +228,10 @@ function BracketView({
             <Connectors key={parentCol} parentCol={parentCol} />
           ))}
 
-          {/* R32 match blocks */}
-          {R32_MATCHES.map((m, i) => (
+          {/* Match blocks are drawn in bracket DISPLAY order (in-order DFS
+              of the tree), not FIFA match-index order, so each match's two
+              feeders sit adjacent and the connectors above line up. */}
+          {BRACKET_DISPLAY_ORDER.r32.map((m, i) => (
             <MatchBlock
               key={m.id}
               col={0}
@@ -242,8 +242,7 @@ function BracketView({
               roundLabel="R32"
             />
           ))}
-          {/* R16 → empty until knockout predictions ship (APT-20) */}
-          {R16_MATCHES.map((m, i) => (
+          {BRACKET_DISPLAY_ORDER.r16.map((m, i) => (
             <MatchBlock
               key={m.id}
               col={1}
@@ -254,7 +253,7 @@ function BracketView({
               roundLabel="R16"
             />
           ))}
-          {QF_MATCHES.map((m, i) => (
+          {BRACKET_DISPLAY_ORDER.qf.map((m, i) => (
             <MatchBlock
               key={m.id}
               col={2}
@@ -265,7 +264,7 @@ function BracketView({
               roundLabel="QF"
             />
           ))}
-          {SF_MATCHES.map((m, i) => (
+          {BRACKET_DISPLAY_ORDER.sf.map((m, i) => (
             <MatchBlock
               key={m.id}
               col={3}

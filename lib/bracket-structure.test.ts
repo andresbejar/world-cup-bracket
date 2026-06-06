@@ -9,6 +9,7 @@ import {
   ALL_KNOCKOUT_MATCHES,
   KNOCKOUT_SLOT_LABELS,
   ANNEX_C_WINNER_GROUPS,
+  BRACKET_DISPLAY_ORDER,
 } from "./bracket-structure";
 import { THIRD_PLACE_SLOT_LABELS, THIRD_PLACE_WINNER_GROUPS } from "./bracket";
 
@@ -120,5 +121,64 @@ describe("bracket-structure (FIFA 2026 tree)", () => {
     // Two const arrays in two files; drift would silently mis-place the
     // 3rd-placed teams. Keep them identical.
     expect([...THIRD_PLACE_WINNER_GROUPS]).toEqual([...ANNEX_C_WINNER_GROUPS]);
+  });
+});
+
+describe("BRACKET_DISPLAY_ORDER (bracket visualization layout)", () => {
+  const SOURCE = {
+    r32: R32_MATCHES,
+    r16: R16_MATCHES,
+    qf: QF_MATCHES,
+    sf: SF_MATCHES,
+  } as const;
+
+  it("each round's display order is a permutation of its source array (none dropped/duplicated)", () => {
+    for (const round of ["r32", "r16", "qf", "sf"] as const) {
+      const displayIds = BRACKET_DISPLAY_ORDER[round].map((m) => m.id).sort();
+      const sourceIds = SOURCE[round].map((m) => m.id).sort();
+      expect(displayIds).toEqual(sourceIds);
+    }
+  });
+
+  // The whole point of the layout: the U-shaped connectors assume the two
+  // feeders of child at display position `i` sit at parent display positions
+  // 2i and 2i+1. This asserts that invariant for every round transition, so a
+  // future edit to the FIFA tree can't silently re-break the alignment.
+  it("child at display position i is fed by parent display positions 2i and 2i+1", () => {
+    const displayPos = (round: "r32" | "r16" | "qf" | "sf") => {
+      const pos = new Map<string, number>();
+      BRACKET_DISPLAY_ORDER[round].forEach((m, i) => {
+        pos.set(`${round}-match-${m.match_index}-winner`, i);
+      });
+      return pos;
+    };
+    const checks: {
+      children: typeof R16_MATCHES;
+      parent: "r32" | "r16" | "qf";
+    }[] = [
+      { children: BRACKET_DISPLAY_ORDER.r16, parent: "r32" },
+      { children: BRACKET_DISPLAY_ORDER.qf, parent: "r16" },
+      { children: BRACKET_DISPLAY_ORDER.sf, parent: "qf" },
+    ];
+    for (const { children, parent } of checks) {
+      const pos = displayPos(parent);
+      children.forEach((child, i) => {
+        const feeders = [child.home_slot_label, child.away_slot_label]
+          .map((label) => pos.get(label))
+          .sort((a, b) => (a ?? 0) - (b ?? 0));
+        expect(feeders).toEqual([2 * i, 2 * i + 1]);
+      });
+    }
+
+    // SF → Final: the single Final block (display position 0) is fed by the
+    // two SF winners at display positions 0 and 1.
+    const sfPos = displayPos("sf");
+    const finalFeeders = [
+      FINAL_MATCH.home_slot_label,
+      FINAL_MATCH.away_slot_label,
+    ]
+      .map((label) => sfPos.get(label))
+      .sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(finalFeeders).toEqual([0, 1]);
   });
 });
