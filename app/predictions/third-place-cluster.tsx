@@ -87,6 +87,7 @@ export function ThirdPlaceCluster({
           </h3>
         </div>
         <span
+          aria-live="polite"
           className={
             "font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums whitespace-nowrap " +
             (resolved

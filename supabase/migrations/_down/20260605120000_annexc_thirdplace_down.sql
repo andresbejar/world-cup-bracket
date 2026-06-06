@@ -11,6 +11,7 @@ drop policy if exists pqt_insert_own  on public.predicted_qualifying_thirds;
 drop policy if exists pqt_select_all  on public.predicted_qualifying_thirds;
 
 drop table if exists public.predicted_qualifying_thirds;
+drop function if exists public.enforce_max_qualifying_thirds();
 
 -- Recreate the old per-slot third-place assignments table + policies.
 create table public.predicted_third_place_assignments (

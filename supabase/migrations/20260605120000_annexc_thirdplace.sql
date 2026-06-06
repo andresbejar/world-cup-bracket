@@ -68,3 +68,25 @@ create policy pqt_delete_own on public.predicted_qualifying_thirds
     auth.uid() = user_id
     and public.is_round_editable('r32')
   );
+
+-- DB-level backstop for the "at most 8 qualifiers per user" rule. The API
+-- enforces it too, but with a read-then-insert that a concurrent double-
+-- submit could slip past — this trigger makes the ceiling authoritative.
+create or replace function public.enforce_max_qualifying_thirds()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (
+    select count(*) from public.predicted_qualifying_thirds
+    where user_id = new.user_id
+  ) >= 8 then
+    raise exception 'a user can select at most 8 qualifying third-placed groups';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger predicted_qualifying_thirds_max
+  before insert on public.predicted_qualifying_thirds
+  for each row execute function public.enforce_max_qualifying_thirds();

@@ -4,11 +4,13 @@ import {
   R16_MATCHES,
   QF_MATCHES,
   SF_MATCHES,
+  THIRD_PLACE_MATCH,
+  FINAL_MATCH,
   ALL_KNOCKOUT_MATCHES,
   KNOCKOUT_SLOT_LABELS,
   ANNEX_C_WINNER_GROUPS,
 } from "./bracket-structure";
-import { THIRD_PLACE_SLOT_LABELS } from "./bracket";
+import { THIRD_PLACE_SLOT_LABELS, THIRD_PLACE_WINNER_GROUPS } from "./bracket";
 
 const slotSet = new Set(KNOCKOUT_SLOT_LABELS.map((s) => s.slot_label));
 
@@ -90,5 +92,33 @@ describe("bracket-structure (FIFA 2026 tree)", () => {
     expect(inputs.sort()).toEqual(
       Array.from({ length: 8 }, (_, i) => `r16-match-${i + 1}-winner`).sort(),
     );
+  });
+
+  it("SF consumes each of the 4 QF winners exactly once", () => {
+    const inputs = SF_MATCHES.flatMap((m) => [
+      m.home_slot_label,
+      m.away_slot_label,
+    ]);
+    expect(inputs.sort()).toEqual(
+      Array.from({ length: 4 }, (_, i) => `qf-match-${i + 1}-winner`).sort(),
+    );
+  });
+
+  it("Final consumes the two SF winners; 3rd-place consumes the two SF losers", () => {
+    // Guards against an inverted winner/loser feed (Final pulling a loser
+    // slot, or the 3rd-place match pulling a winner slot).
+    expect([FINAL_MATCH.home_slot_label, FINAL_MATCH.away_slot_label].sort()).toEqual([
+      "sf-match-1-winner",
+      "sf-match-2-winner",
+    ]);
+    expect(
+      [THIRD_PLACE_MATCH.home_slot_label, THIRD_PLACE_MATCH.away_slot_label].sort(),
+    ).toEqual(["sf-match-1-loser", "sf-match-2-loser"]);
+  });
+
+  it("THIRD_PLACE_WINNER_GROUPS (bracket.ts) stays in sync with ANNEX_C_WINNER_GROUPS", () => {
+    // Two const arrays in two files; drift would silently mis-place the
+    // 3rd-placed teams. Keep them identical.
+    expect([...THIRD_PLACE_WINNER_GROUPS]).toEqual([...ANNEX_C_WINNER_GROUPS]);
   });
 });
