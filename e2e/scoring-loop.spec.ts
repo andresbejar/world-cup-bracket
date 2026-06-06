@@ -36,6 +36,15 @@ interface MatchSnapshot {
 const mutatedMatches: MatchSnapshot[] = [];
 let testUserId = "";
 
+// The predicted-vs-real triptych only renders once a match's kickoff has
+// passed (lib/match-display.ts hasRealResult — guards against phantom FINAL
+// rows showing before the tournament; see APT-51). These specs simulate a
+// finished result on a real seed match whose scheduled_at is still in the
+// future, so we advance the *browser* clock past kickoff before asserting on
+// /predictions. Server-side scoring (above) is unaffected — it runs off the
+// service-role client, not the page clock.
+const AFTER_KICKOFF = new Date("2026-07-01T00:00:00Z");
+
 test.describe("scoring loop", () => {
   test.beforeAll(async () => {
     const admin = adminClient();
@@ -190,6 +199,7 @@ test.describe("scoring loop", () => {
     await expect(youRow).toContainText("3");
 
     // Predictions page swaps the finished match's card to the triptych.
+    await page.clock.setFixedTime(AFTER_KICKOFF);
     await page.goto("/predictions");
     await expect(page.getByText("GROUP STAGE · ACTIVE ROUND")).toBeVisible({
       timeout: 15_000,
@@ -248,6 +258,7 @@ test.describe("scoring loop", () => {
       .single();
     expect(predRow?.points_awarded).toBe(1);
 
+    await page.clock.setFixedTime(AFTER_KICKOFF);
     await page.goto("/predictions");
     await expect(page.getByText(/\+1 pt · outcome/i)).toBeVisible({
       timeout: 10_000,
@@ -300,6 +311,7 @@ test.describe("scoring loop", () => {
       .single();
     expect(predRow?.points_awarded).toBe(0);
 
+    await page.clock.setFixedTime(AFTER_KICKOFF);
     await page.goto("/predictions");
     // Triptych for wrong-outcome shows "0 pts" with red tint. The label
     // is just "0 pts" (no qualifier) per the PredictedVsRealCard's
