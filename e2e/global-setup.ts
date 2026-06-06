@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { resetStrandedMatchResults } from "./helpers";
 
 // Auth bootstrap for every E2E run. The flow:
 //
@@ -58,6 +59,28 @@ export default async function globalSetup(config: FullConfig) {
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  // Self-heal stranded match results from a prior interrupted run before any
+  // spec loads. scoring-loop.spec flips real seed matches to `finished` and
+  // restores them in afterAll — but an interrupted run (Ctrl-C, timeout, CI
+  // cancel) skips that restore, leaving phantom FINAL rows in the shared DB.
+  // The reset only runs pre-tournament and only on future-dated rows, so it
+  // can never wipe a legitimately-played match. Best-effort: a transient DB
+  // error here must not abort the whole suite (mirrors teardown's philosophy).
+  try {
+    const heal = await resetStrandedMatchResults(admin);
+    if (heal.matchesReset.length > 0) {
+      console.warn(
+        `[e2e setup] self-healed ${heal.matchesReset.length} stranded match result(s) ` +
+          `(${heal.scoringCleared} prediction scoring rows cleared): ${heal.matchesReset.join(", ")}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      "[e2e setup] stranded-result self-heal failed (continuing):",
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   // Wipe any stale test user from a previous run. ON DELETE CASCADE in
   // public.users → predictions → finalist_picks → predicted_qualifying_thirds
