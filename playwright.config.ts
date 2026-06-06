@@ -1,9 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 import dotenv from "dotenv";
 
-// Load .env.local for the e2e env (Supabase URL/keys). Same file the
-// dev server uses — keeps a single source of truth for secrets locally;
-// CI gets the values via GitHub Actions secrets.
+// Load e2e Supabase creds. .env.test holds the dedicated test-project
+// creds (APT-52) so the suite never touches the live tournament DB; CI
+// supplies the same values via TEST_SUPABASE_* GitHub secrets. dotenv does
+// not override already-set vars, so loading .env.test first gives it
+// priority and .env.local only fills gaps. If .env.test is absent and
+// .env.local points at prod, the assertTestDatabase guard fails loud rather
+// than silently mutating prod.
+dotenv.config({ path: ".env.test" });
 dotenv.config({ path: ".env.local" });
 
 const PORT = process.env.E2E_PORT ?? "3100";
@@ -51,11 +56,22 @@ export default defineConfig({
   // (not `next dev`) so the build is exercised the same way it ships on
   // Vercel. Reuses an existing server when running locally with one already
   // up on $E2E_PORT.
+  //
+  // Locally we `next build` first so the bundle is compiled against the test
+  // env this config just loaded (.env.test). Next inlines NEXT_PUBLIC_* at
+  // BUILD time — into the server/middleware bundle too — so a stale build
+  // made against .env.local (prod) would make the running app talk to prod
+  // while global-setup mints its session in the test DB; the project-scoped
+  // auth cookie wouldn't match and /predictions bounces to /sign-in. CI skips
+  // the rebuild here because its workflow already runs `npm run build` with
+  // the TEST_SUPABASE_* env in a dedicated step (no double build).
   webServer: {
-    command: `next start --port ${PORT}`,
+    command: process.env.CI
+      ? `next start --port ${PORT}`
+      : `next build && next start --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 240_000,
     stdout: "ignore",
     stderr: "pipe",
   },
