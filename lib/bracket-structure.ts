@@ -144,6 +144,57 @@ export const ALL_KNOCKOUT_MATCHES: KnockoutMatch[] = [
 ];
 
 // ----------------------------------------------------------------
+// Bracket display order (for the SVG bracket visualization).
+//
+// The match arrays above are in FIFA match-index order, NOT in the
+// top-to-bottom order a bracket should be drawn in. Because the R16/QF
+// feeders are non-adjacent (see above), rendering each column in array
+// order would put a match's two feeders far apart, and the U-shaped
+// connectors — which assume the two feeders of child `i` sit at parent
+// positions 2i and 2i+1 — would point at the wrong matches.
+//
+// An in-order DFS of the bracket tree (left subtree → node → right
+// subtree), starting at the Final, yields a per-round ordering where the
+// two feeders of every downstream match are vertically adjacent. Drawing
+// each column in this order makes the connector adjacency hold for free.
+// Derived from the topology, so it stays correct if the tree is edited.
+function buildBracketDisplayOrder(): {
+  r32: KnockoutMatch[];
+  r16: KnockoutMatch[];
+  qf: KnockoutMatch[];
+  sf: KnockoutMatch[];
+} {
+  // winner-slot-label → the match that produces it
+  const producer = new Map<string, KnockoutMatch>();
+  for (const m of [...R32_MATCHES, ...R16_MATCHES, ...QF_MATCHES, ...SF_MATCHES]) {
+    producer.set(`${m.round_id}-match-${m.match_index}-winner`, m);
+  }
+
+  const order: {
+    r32: KnockoutMatch[];
+    r16: KnockoutMatch[];
+    qf: KnockoutMatch[];
+    sf: KnockoutMatch[];
+  } = { r32: [], r16: [], qf: [], sf: [] };
+
+  function visit(m: KnockoutMatch) {
+    // A child is the match producing this match's home/away winner slot.
+    // R32 slot labels (winner-/runner-up-/best-3rd-vs-) aren't in `producer`.
+    const left = producer.get(m.home_slot_label);
+    const right = producer.get(m.away_slot_label);
+    if (left) visit(left);
+    const bucket = order[m.round_id as "r32" | "r16" | "qf" | "sf"];
+    if (bucket) bucket.push(m);
+    if (right) visit(right);
+  }
+
+  visit(FINAL_MATCH);
+  return order;
+}
+
+export const BRACKET_DISPLAY_ORDER = buildBracketDisplayOrder();
+
+// ----------------------------------------------------------------
 // All knockout slot labels needed in bracket_slots
 // ----------------------------------------------------------------
 export const KNOCKOUT_SLOT_LABELS: { round_id: string; slot_label: string }[] = [
