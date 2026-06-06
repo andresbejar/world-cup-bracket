@@ -5,6 +5,28 @@ import { clearMatchScoring } from "../lib/scoring-runtime";
 // IDs, slot labels, team mappings) go through here instead of duplicating
 // the supabase admin client setup per file.
 
+// Production Supabase project ref. The e2e suite mutates matches/rounds and
+// is only safe against a dedicated test project (APT-52); this constant lets
+// assertTestDatabase fail loud if a misconfigured env ever points e2e at prod.
+// The project ref is part of the public NEXT_PUBLIC_SUPABASE_URL — not a secret.
+const PROD_PROJECT_REF = "xuqonbzvkgfqhkkypdja";
+
+/**
+ * Hard refusal to run e2e against the live tournament database. After kickoff
+ * (2026-06-11) the resetStrandedMatchResults self-heal no-ops, so an e2e run
+ * against prod could flip real result rows and recompute leaderboards (APT-52).
+ * Every admin-client construction routes through here.
+ */
+export function assertTestDatabase(url: string): void {
+  if (url.includes(PROD_PROJECT_REF)) {
+    throw new Error(
+      `E2E refuses to run against the production Supabase project (${PROD_PROJECT_REF}). ` +
+        "Point NEXT_PUBLIC_SUPABASE_URL at the dedicated test project " +
+        "(see .env.test locally / TEST_SUPABASE_* secrets in CI).",
+    );
+  }
+}
+
 export function adminClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -13,6 +35,7 @@ export function adminClient(): SupabaseClient {
       "helpers.adminClient: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set",
     );
   }
+  assertTestDatabase(url);
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

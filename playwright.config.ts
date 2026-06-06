@@ -1,9 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 import dotenv from "dotenv";
 
-// Load .env.local for the e2e env (Supabase URL/keys). Same file the
-// dev server uses — keeps a single source of truth for secrets locally;
-// CI gets the values via GitHub Actions secrets.
+// Load e2e Supabase creds. .env.test holds the dedicated test-project
+// creds (APT-52) so the suite never touches the live tournament DB; CI
+// supplies the same values via TEST_SUPABASE_* GitHub secrets. dotenv does
+// not override already-set vars, so loading .env.test first gives it
+// priority and .env.local only fills gaps. If .env.test is absent and
+// .env.local points at prod, the assertTestDatabase guard fails loud rather
+// than silently mutating prod.
+dotenv.config({ path: ".env.test" });
 dotenv.config({ path: ".env.local" });
 
 const PORT = process.env.E2E_PORT ?? "3100";

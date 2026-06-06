@@ -52,6 +52,33 @@ Key routing rules:
 - **Playwright** for E2E. 5 critical paths required before production deploy: signup, bracket-build, round-lock, match-finishes-leaderboard-updates, mobile-responsive.
 - See the test plan at `designs/andresbejar-main-eng-review-test-plan-20260509-164432.md`.
 
+### E2E test database (APT-52)
+
+The E2E suite mutates `matches.status` / `rounds.locked_at`, so it runs against a **dedicated test Supabase project** — never prod. Once the tournament is live (2026-06-11) an e2e run against prod could flip real result rows and recompute leaderboards. Two backstops enforce the split:
+
+- `e2e/helpers.ts` `assertTestDatabase()` — every admin-client construction hard-refuses the prod project ref. Routed through `adminClient()` and `e2e/global-setup.ts`.
+- `playwright.config.ts` loads `.env.test` (test project) before `.env.local`; CI maps `TEST_SUPABASE_URL` / `TEST_SUPABASE_ANON_KEY` / `TEST_SUPABASE_SERVICE_ROLE_KEY` into the standard env names.
+
+`.env.test` = e2e test project. `.env.local` = prod app + operator scripts (`reset-match-results.ts`, `dev-login.ts` keep targeting prod).
+
+**One-time provisioning of the test project:**
+
+```bash
+# 1. Create a free Supabase project (e.g. wc-bracket-test) in the dashboard.
+# 2. Apply schema + seed (clean project → migrations apply fresh, no repair):
+supabase link --project-ref <test-ref>
+supabase db push
+NEXT_PUBLIC_SUPABASE_URL=<test-url> SUPABASE_SERVICE_ROLE_KEY=<test-service-key> \
+  npm run seed:apply
+# 3. Set CI secrets:
+gh secret set TEST_SUPABASE_URL
+gh secret set TEST_SUPABASE_ANON_KEY
+gh secret set TEST_SUPABASE_SERVICE_ROLE_KEY
+# 4. Create local .env.test with the same three values (see .env.example).
+```
+
+**Ongoing:** when a new migration lands, run `supabase db push` against the test project too — it is not auto-migrated by CI the way prod is. If the test DB ever gets dirty from an interrupted run, re-run `npm run seed:apply` (idempotent) against it.
+
 ## Backups & Recovery
 
 Daily encrypted `pg_dump` of the `public` schema runs at 05:13 UTC via `.github/workflows/backup.yml`. Output is GPG-symmetric-encrypted (AES-256) and uploaded as a private workflow artifact with 30-day retention. Two repo secrets required: `SUPABASE_DB_URL` (direct connection, port 5432) and `BACKUP_GPG_PASSPHRASE` (also save to a password manager — losing it loses the backups).
@@ -82,7 +109,7 @@ If Supabase Point-in-Time Recovery is enabled on the project (Pro plan), prefer 
 
 ### Phantom "FINAL" match results
 
-If the app shows bogus FINAL cards before kickoff (e.g. `MEX 2-1 RSA` on a match that hasn't been played), the DB has stranded match rows — almost always from an E2E run (`scoring-loop.spec`) interrupted before its `afterAll` restore ran against the shared DB. The UI already guards against this via `hasRealResult()` (`lib/match-display.ts`), which won't render a `finished` status on a future-dated match, but the rows still need scrubbing.
+If the app shows bogus FINAL cards before kickoff (e.g. `MEX 2-1 RSA` on a match that hasn't been played), the DB has stranded match rows. Historically these came from an E2E run (`scoring-loop.spec`) interrupted before its `afterAll` restore ran against the shared prod DB; as of APT-52 e2e runs against a dedicated test project (see "E2E test database" above), so prod should no longer be polluted this way. The UI also guards against it via `hasRealResult()` (`lib/match-display.ts`), which won't render a `finished` status on a future-dated match, but any stranded rows still need scrubbing.
 
 Run the operator scrub against the live DB:
 
