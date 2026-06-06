@@ -80,6 +80,18 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 < restore.sql
 
 If Supabase Point-in-Time Recovery is enabled on the project (Pro plan), prefer that over the dump: it captures every WAL segment and rewinds with no manual SQL. The dump is the cheap fallback. Either way, **never** restore over a live tournament DB without checkpointing the current state first (`pg_dump` it again, then restore).
 
+### Phantom "FINAL" match results
+
+If the app shows bogus FINAL cards before kickoff (e.g. `MEX 2-1 RSA` on a match that hasn't been played), the DB has stranded match rows — almost always from an E2E run (`scoring-loop.spec`) interrupted before its `afterAll` restore ran against the shared DB. The UI already guards against this via `hasRealResult()` (`lib/match-display.ts`), which won't render a `finished` status on a future-dated match, but the rows still need scrubbing.
+
+Run the operator scrub against the live DB:
+
+```bash
+npx tsx scripts/reset-match-results.ts
+```
+
+It reads `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` from `.env.local`, lists the stranded matches, resets each future-dated "played" row back to `scheduled` (null scores), and clears any prediction scoring it stamped. The future-date predicate makes it safe to run any time — it can never wipe a legitimately-finished past match. **Safety gate:** once any match has kicked off (tournament is live) it refuses and no-ops, since a future-dated "played" row could then be a real reschedule; fix those by hand. The same self-heal also runs automatically at E2E `global-setup`, so a fresh test run cleans up after a prior interrupted one.
+
 ## Build order
 
 This is week 0 (2026-05-09). Hard deadline is 2026-06-11 (~30 days).
