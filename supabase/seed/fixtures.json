@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-10T04:57:32.520Z",
+  "generated_at": "2026-06-06T04:23:06.229Z",
   "teams": [
     {
       "id": "BEL",
@@ -885,51 +885,51 @@
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-1",
+      "id": "r32-best-3rd-vs-A",
       "round_id": "r32",
-      "slot_label": "best-3rd-1",
+      "slot_label": "best-3rd-vs-A",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-2",
+      "id": "r32-best-3rd-vs-B",
       "round_id": "r32",
-      "slot_label": "best-3rd-2",
+      "slot_label": "best-3rd-vs-B",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-3",
+      "id": "r32-best-3rd-vs-D",
       "round_id": "r32",
-      "slot_label": "best-3rd-3",
+      "slot_label": "best-3rd-vs-D",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-4",
+      "id": "r32-best-3rd-vs-E",
       "round_id": "r32",
-      "slot_label": "best-3rd-4",
+      "slot_label": "best-3rd-vs-E",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-5",
+      "id": "r32-best-3rd-vs-G",
       "round_id": "r32",
-      "slot_label": "best-3rd-5",
+      "slot_label": "best-3rd-vs-G",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-6",
+      "id": "r32-best-3rd-vs-I",
       "round_id": "r32",
-      "slot_label": "best-3rd-6",
+      "slot_label": "best-3rd-vs-I",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-7",
+      "id": "r32-best-3rd-vs-K",
       "round_id": "r32",
-      "slot_label": "best-3rd-7",
+      "slot_label": "best-3rd-vs-K",
       "real_team_id": null
     },
     {
-      "id": "r32-best-3rd-8",
+      "id": "r32-best-3rd-vs-L",
       "round_id": "r32",
-      "slot_label": "best-3rd-8",
+      "slot_label": "best-3rd-vs-L",
       "real_team_id": null
     },
     {
@@ -1705,13 +1705,29 @@
     {
       "id": "m-r32-1",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-A",
-      "away_slot_id": "r32-best-3rd-1",
+      "home_slot_id": "r32-runner-up-A",
+      "away_slot_id": "r32-runner-up-B",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-2",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-E",
+      "away_slot_id": "r32-best-3rd-vs-E",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-3",
+      "round_id": "r32",
+      "home_slot_id": "r32-winner-F",
+      "away_slot_id": "r32-runner-up-C",
+      "scheduled_at": "2026-06-28T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
+      "id": "m-r32-4",
       "round_id": "r32",
       "home_slot_id": "r32-winner-C",
       "away_slot_id": "r32-runner-up-F",
@@ -1719,74 +1735,58 @@
       "apifootball_fixture_id": null
     },
     {
-      "id": "m-r32-3",
-      "round_id": "r32",
-      "home_slot_id": "r32-winner-E",
-      "away_slot_id": "r32-best-3rd-2",
-      "scheduled_at": "2026-06-28T19:00:00Z",
-      "apifootball_fixture_id": null
-    },
-    {
-      "id": "m-r32-4",
-      "round_id": "r32",
-      "home_slot_id": "r32-winner-B",
-      "away_slot_id": "r32-runner-up-A",
-      "scheduled_at": "2026-06-28T19:00:00Z",
-      "apifootball_fixture_id": null
-    },
-    {
       "id": "m-r32-5",
       "round_id": "r32",
-      "home_slot_id": "r32-runner-up-C",
-      "away_slot_id": "r32-runner-up-E",
+      "home_slot_id": "r32-winner-I",
+      "away_slot_id": "r32-best-3rd-vs-I",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-6",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-D",
-      "away_slot_id": "r32-best-3rd-3",
+      "home_slot_id": "r32-runner-up-E",
+      "away_slot_id": "r32-runner-up-I",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-7",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-F",
-      "away_slot_id": "r32-runner-up-B",
+      "home_slot_id": "r32-winner-A",
+      "away_slot_id": "r32-best-3rd-vs-A",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-8",
       "round_id": "r32",
-      "home_slot_id": "r32-runner-up-D",
-      "away_slot_id": "r32-best-3rd-4",
+      "home_slot_id": "r32-winner-L",
+      "away_slot_id": "r32-best-3rd-vs-L",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-9",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-G",
-      "away_slot_id": "r32-best-3rd-5",
+      "home_slot_id": "r32-winner-D",
+      "away_slot_id": "r32-best-3rd-vs-D",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-10",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-I",
-      "away_slot_id": "r32-runner-up-L",
+      "home_slot_id": "r32-winner-G",
+      "away_slot_id": "r32-best-3rd-vs-G",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-11",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-K",
-      "away_slot_id": "r32-best-3rd-6",
+      "home_slot_id": "r32-runner-up-K",
+      "away_slot_id": "r32-runner-up-L",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
@@ -1794,15 +1794,15 @@
       "id": "m-r32-12",
       "round_id": "r32",
       "home_slot_id": "r32-winner-H",
-      "away_slot_id": "r32-runner-up-G",
+      "away_slot_id": "r32-runner-up-J",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-13",
       "round_id": "r32",
-      "home_slot_id": "r32-runner-up-I",
-      "away_slot_id": "r32-runner-up-K",
+      "home_slot_id": "r32-winner-B",
+      "away_slot_id": "r32-best-3rd-vs-B",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
@@ -1810,46 +1810,46 @@
       "id": "m-r32-14",
       "round_id": "r32",
       "home_slot_id": "r32-winner-J",
-      "away_slot_id": "r32-best-3rd-7",
+      "away_slot_id": "r32-runner-up-H",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-15",
       "round_id": "r32",
-      "home_slot_id": "r32-winner-L",
-      "away_slot_id": "r32-runner-up-H",
+      "home_slot_id": "r32-winner-K",
+      "away_slot_id": "r32-best-3rd-vs-K",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r32-16",
       "round_id": "r32",
-      "home_slot_id": "r32-runner-up-J",
-      "away_slot_id": "r32-best-3rd-8",
+      "home_slot_id": "r32-runner-up-D",
+      "away_slot_id": "r32-runner-up-G",
       "scheduled_at": "2026-06-28T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r16-1",
       "round_id": "r16",
-      "home_slot_id": "r16-r32-match-1-winner",
-      "away_slot_id": "r16-r32-match-2-winner",
+      "home_slot_id": "r16-r32-match-2-winner",
+      "away_slot_id": "r16-r32-match-5-winner",
       "scheduled_at": "2026-07-04T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r16-2",
       "round_id": "r16",
-      "home_slot_id": "r16-r32-match-3-winner",
-      "away_slot_id": "r16-r32-match-4-winner",
+      "home_slot_id": "r16-r32-match-1-winner",
+      "away_slot_id": "r16-r32-match-3-winner",
       "scheduled_at": "2026-07-04T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r16-3",
       "round_id": "r16",
-      "home_slot_id": "r16-r32-match-5-winner",
+      "home_slot_id": "r16-r32-match-4-winner",
       "away_slot_id": "r16-r32-match-6-winner",
       "scheduled_at": "2026-07-04T19:00:00Z",
       "apifootball_fixture_id": null
@@ -1865,32 +1865,32 @@
     {
       "id": "m-r16-5",
       "round_id": "r16",
-      "home_slot_id": "r16-r32-match-9-winner",
-      "away_slot_id": "r16-r32-match-10-winner",
-      "scheduled_at": "2026-07-04T19:00:00Z",
-      "apifootball_fixture_id": null
-    },
-    {
-      "id": "m-r16-6",
-      "round_id": "r16",
       "home_slot_id": "r16-r32-match-11-winner",
       "away_slot_id": "r16-r32-match-12-winner",
       "scheduled_at": "2026-07-04T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
+      "id": "m-r16-6",
+      "round_id": "r16",
+      "home_slot_id": "r16-r32-match-9-winner",
+      "away_slot_id": "r16-r32-match-10-winner",
+      "scheduled_at": "2026-07-04T19:00:00Z",
+      "apifootball_fixture_id": null
+    },
+    {
       "id": "m-r16-7",
       "round_id": "r16",
-      "home_slot_id": "r16-r32-match-13-winner",
-      "away_slot_id": "r16-r32-match-14-winner",
+      "home_slot_id": "r16-r32-match-14-winner",
+      "away_slot_id": "r16-r32-match-16-winner",
       "scheduled_at": "2026-07-04T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-r16-8",
       "round_id": "r16",
-      "home_slot_id": "r16-r32-match-15-winner",
-      "away_slot_id": "r16-r32-match-16-winner",
+      "home_slot_id": "r16-r32-match-13-winner",
+      "away_slot_id": "r16-r32-match-15-winner",
       "scheduled_at": "2026-07-04T19:00:00Z",
       "apifootball_fixture_id": null
     },
@@ -1905,16 +1905,16 @@
     {
       "id": "m-qf-2",
       "round_id": "qf",
-      "home_slot_id": "qf-r16-match-3-winner",
-      "away_slot_id": "qf-r16-match-4-winner",
+      "home_slot_id": "qf-r16-match-5-winner",
+      "away_slot_id": "qf-r16-match-6-winner",
       "scheduled_at": "2026-07-09T19:00:00Z",
       "apifootball_fixture_id": null
     },
     {
       "id": "m-qf-3",
       "round_id": "qf",
-      "home_slot_id": "qf-r16-match-5-winner",
-      "away_slot_id": "qf-r16-match-6-winner",
+      "home_slot_id": "qf-r16-match-3-winner",
+      "away_slot_id": "qf-r16-match-4-winner",
       "scheduled_at": "2026-07-09T19:00:00Z",
       "apifootball_fixture_id": null
     },

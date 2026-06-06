@@ -81,6 +81,45 @@ async function main() {
   const mCount = await upsertBatch("matches", seed.matches, "id");
   console.log(`  ${mCount} matches upserted`);
 
+  // Prune bracket_slots no longer in the seed (e.g. the old best-3rd-{1..8}
+  // slots replaced by best-3rd-vs-{winner}). Safe only after matches above
+  // are re-pointed at the new slots; the annexc_thirdplace migration must
+  // have already deleted knockout predictions that referenced the old ones.
+  const seedSlotIds = new Set(seed.bracket_slots.map((s) => s.id as string));
+  const { data: dbSlots, error: dbSlotsErr } = await supabase
+    .from("bracket_slots")
+    .select("id");
+  if (dbSlotsErr) {
+    console.error("Failed to read bracket_slots for pruning:", dbSlotsErr);
+    throw dbSlotsErr;
+  }
+  const orphanIds = (dbSlots ?? [])
+    .map((s) => s.id as string)
+    .filter((id) => !seedSlotIds.has(id));
+  if (orphanIds.length > 0) {
+    const { error: pruneErr } = await supabase
+      .from("bracket_slots")
+      .delete()
+      .in("id", orphanIds);
+    if (pruneErr) {
+      // Non-fatal: a leftover FK (e.g. the pre-migration
+      // predicted_third_place_assignments table still referencing old
+      // best-3rd-{1..8} slots) means the annexc_thirdplace migration
+      // hasn't been applied yet. The upserts above already succeeded;
+      // warn loudly and let the run finish rather than abort the seed.
+      console.warn(
+        `  ⚠️  could not prune ${orphanIds.length} orphan bracket_slots ` +
+          `(${pruneErr.code ?? "error"}): ${pruneErr.message}`,
+      );
+      console.warn(
+        "     → apply the annexc_thirdplace migration (supabase migration up " +
+          "/ supabase db reset), then re-run seed:apply to clear them.",
+      );
+    } else {
+      console.log(`  pruned ${orphanIds.length} orphan bracket_slots`);
+    }
+  }
+
   // Verify final counts
   console.log("\n=== Verifying final row counts ===");
   for (const tbl of ["teams", "rounds", "bracket_slots", "matches"]) {

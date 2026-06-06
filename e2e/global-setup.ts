@@ -60,7 +60,7 @@ export default async function globalSetup(config: FullConfig) {
   });
 
   // Wipe any stale test user from a previous run. ON DELETE CASCADE in
-  // public.users → predictions → finalist_picks → predicted_third_place
+  // public.users → predictions → finalist_picks → predicted_qualifying_thirds
   // makes this idempotent.
   const existing = await admin.auth.admin.listUsers();
   if (existing.error) {

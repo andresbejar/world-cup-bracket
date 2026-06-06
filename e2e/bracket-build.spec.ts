@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   adminClient,
-  listBestThirdSlots,
+  QUALIFYING_THIRD_GROUPS,
   listGroupMatches,
   listKnockoutMatches,
 } from "./helpers";
@@ -39,7 +39,7 @@ test.describe("bracket build", () => {
     if (!user) throw new Error("test user not found — global-setup ran?");
     await admin.from("predictions").delete().eq("user_id", user.id);
     await admin
-      .from("predicted_third_place_assignments")
+      .from("predicted_qualifying_thirds")
       .delete()
       .eq("user_id", user.id);
     await admin.from("finalist_picks").delete().eq("user_id", user.id);
@@ -67,24 +67,19 @@ test.describe("bracket build", () => {
       expect(res.status(), `predict ${m.id} (${m.home_code} vs ${m.away_code})`).toBe(200);
     });
 
-    // Fill the 8 best-3rd slots. Pick the first 8 group winners as the
-    // predicted occupants — the API doesn't enforce "must be a third-
-    // place team" (the UI does); we just need 8 distinct team_ids so
-    // the (user_id, predicted_team_id) unique constraint is satisfied.
-    const bestThirdSlots = await listBestThirdSlots();
-    expect(bestThirdSlots.length).toBe(8);
+    // Select 8 groups as the "best third-placed teams" qualifying set.
+    // Annex C derives each one's R32 opponent — the spec just proves the
+    // set persists; correctness of the assignment is unit-tested.
     const teamPool = Array.from(
       new Set(groupMatches.map((m) => m.home_team_id)),
     );
-    for (let i = 0; i < bestThirdSlots.length; i++) {
-      const slot = bestThirdSlots[i];
-      const team_id = teamPool[i];
+    for (const group_letter of QUALIFYING_THIRD_GROUPS) {
       const res = await request.post("/api/third-place-assignments", {
-        data: { slot_id: slot.slot_id, team_id },
+        data: { group_letter, selected: true },
       });
       expect(
         res.status(),
-        `third-place pick ${slot.slot_label} → ${team_id}`,
+        `qualifying third group ${group_letter}`,
       ).toBe(200);
     }
 
@@ -141,8 +136,8 @@ test.describe("bracket build", () => {
 
     // Switch to bracket view and confirm R32 slots have real team codes
     // (not "—"). With every home team winning their group, the 12
-    // winner-A..L slots should all be filled. Best-3rd-1..8 are also
-    // filled from our API calls above.
+    // winner-A..L slots should all be filled. The 8 best-3rd-vs slots
+    // fill via Annex C from our qualifying-set selection above.
     await page.getByRole("tab", { name: /Bracket/i }).click();
     const r32Dashes = page.locator("svg text", { hasText: /^—$/ });
     // R16/QF/SF/F slots populate via cascade off knockout predictions.

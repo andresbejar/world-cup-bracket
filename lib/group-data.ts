@@ -70,10 +70,6 @@ export interface HydratedPrediction {
   predicted_winning_slot_id: string | null;
 }
 
-export interface HydratedThirdPlacePick {
-  slot_id: string;        // bracket_slot.id, e.g. "r32-best-3rd-3"
-  predicted_team_id: string;
-}
 
 export interface HydratedFinalistPicks {
   first_place_team_id: string | null;
@@ -87,7 +83,8 @@ export interface PredictionWorkspaceData {
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
   predictions: HydratedPrediction[];
-  thirdPlacePicks: HydratedThirdPlacePick[];
+  /** Group letters the user predicts will produce a qualifying 3rd-placed team (≤8). */
+  qualifyingThirdGroups: string[];
   finalistPicks: HydratedFinalistPicks;
   /** bracket_slot.id → bracket_slot.slot_label, for resolving predicted_winning_slot_id. */
   slotLabelById: Record<string, string>;
@@ -138,8 +135,8 @@ export async function loadPredictionWorkspace(
       )
       .eq("user_id", user_id),
     supabase
-      .from("predicted_third_place_assignments")
-      .select("slot_id, predicted_team_id")
+      .from("predicted_qualifying_thirds")
+      .select("group_letter")
       .eq("user_id", user_id),
     supabase
       .from("finalist_picks")
@@ -229,7 +226,9 @@ export async function loadPredictionWorkspace(
     groupMatches,
     knockoutMatches,
     predictions: predictions ?? [],
-    thirdPlacePicks: thirdPlace ?? [],
+    qualifyingThirdGroups: (thirdPlace ?? []).map(
+      (r) => r.group_letter as string,
+    ),
     finalistPicks: finalist ?? {
       first_place_team_id: null,
       second_place_team_id: null,

@@ -13,10 +13,11 @@ import {
 } from "./scoring";
 import {
   computeThirdPlacePlacementPoints,
+  computeGroupStandings,
   THIRD_PLACE_SLOT_LABELS,
   type ActualMatch,
-  type BracketSlot,
-  type PredictedThirdPlaceAssignment,
+  type MatchScore,
+  type Team,
 } from "./bracket";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -238,46 +239,120 @@ async function computeThirdPlaceBonus(
   supabase: SupabaseClient,
   user_id: string,
 ): Promise<{ ok: true; value: number } | { ok: false; reason: string }> {
-  // The 8 R32 best-3rd slots. real_team_id is null until the polling
-  // job (or admin) populates them post-group-stage.
+  // Real side: the 8 "best-3rd-vs-{winner}" slots, populated via Annex C
+  // once FIFA's real qualifying set is known (see reality.ts
+  // populateRealBestThirdSlots). real_team_id is null until then; if any
+  // is unsettled we pass null to the scorer so no bonus materializes yet.
   const { data: realSlots, error: slotErr } = await supabase
     .from("bracket_slots")
     .select("slot_label, real_team_id")
     .in("slot_label", [...THIRD_PLACE_SLOT_LABELS]);
   if (slotErr) return { ok: false, reason: slotErr.message };
 
-  const { data: picks, error: picksErr } = await supabase
-    .from("predicted_third_place_assignments")
-    .select("slot_id, predicted_team_id")
-    .eq("user_id", user_id);
-  if (picksErr) return { ok: false, reason: picksErr.message };
-
-  // The picks reference bracket_slot.id; resolve back to slot_label for
-  // the pure scorer. We pull this lookup from the realSlots query above
-  // — but those are queried by slot_label, not id. Pull the id→label
-  // map for the 8 third-place slots in one shot.
-  const { data: thirdPlaceSlotIds, error: idsErr } = await supabase
-    .from("bracket_slots")
-    .select("id, slot_label")
-    .in("slot_label", [...THIRD_PLACE_SLOT_LABELS]);
-  if (idsErr) return { ok: false, reason: idsErr.message };
-  const labelById = new Map<string, string>();
-  for (const s of thirdPlaceSlotIds ?? []) {
-    labelById.set(s.id as string, s.slot_label as string);
+  const realTeamIds: string[] = [];
+  let allSettled =
+    (realSlots?.length ?? 0) === THIRD_PLACE_SLOT_LABELS.length;
+  for (const s of realSlots ?? []) {
+    const tid = s.real_team_id as string | null;
+    if (tid == null) allSettled = false;
+    else realTeamIds.push(tid);
   }
 
-  const assignments: PredictedThirdPlaceAssignment[] = (picks ?? []).map(
-    (p) => ({
-      slot_label:
-        labelById.get(p.slot_id as string) ?? (p.slot_id as string),
-      team_id: p.predicted_team_id as string,
-    }),
-  );
-  const slotsForScorer: BracketSlot[] = (realSlots ?? []).map((s) => ({
-    slot_label: s.slot_label as string,
-    real_team_id: (s.real_team_id as string | null) ?? null,
-  }));
+  // Predicted side: the user's selected qualifying groups → the team they
+  // predicted to finish 3rd in each (derived from their predicted standings).
+  const predicted = await loadUserPredictedThirds(supabase, user_id);
+  if (predicted.ok === false) return predicted;
 
-  const pts = computeThirdPlacePlacementPoints(assignments, slotsForScorer);
+  const pts = computeThirdPlacePlacementPoints(
+    predicted.teamIds,
+    allSettled ? realTeamIds : null,
+  );
   return { ok: true, value: pts ?? 0 };
+}
+
+/**
+ * Derive a user's predicted 3rd-placed team for each group they selected
+ * to qualify, by recomputing their predicted group standings from their
+ * group-match score predictions. Returns the (≤8) team_ids.
+ */
+async function loadUserPredictedThirds(
+  supabase: SupabaseClient,
+  user_id: string,
+): Promise<{ ok: true; teamIds: string[] } | { ok: false; reason: string }> {
+  const { data: sel, error: selErr } = await supabase
+    .from("predicted_qualifying_thirds")
+    .select("group_letter")
+    .eq("user_id", user_id);
+  if (selErr) return { ok: false, reason: selErr.message };
+  const selectedGroups = new Set((sel ?? []).map((r) => r.group_letter as string));
+  if (selectedGroups.size === 0) return { ok: true, teamIds: [] };
+
+  const { data: teams, error: teamsErr } = await supabase
+    .from("teams")
+    .select("id, group_letter");
+  if (teamsErr) return { ok: false, reason: teamsErr.message };
+  const groupByTeam = new Map<string, string>();
+  const teamsByGroup = new Map<string, Team[]>();
+  for (const t of teams ?? []) {
+    const id = t.id as string;
+    const letter = t.group_letter as string;
+    groupByTeam.set(id, letter);
+    if (!teamsByGroup.has(letter)) teamsByGroup.set(letter, []);
+    teamsByGroup.get(letter)!.push({ id, group_letter: letter });
+  }
+
+  // team-XYZ slots → team_id, so each group match resolves to two teams.
+  const { data: slots, error: slotErr } = await supabase
+    .from("bracket_slots")
+    .select("id, real_team_id")
+    .like("id", "team-%");
+  if (slotErr) return { ok: false, reason: slotErr.message };
+  const slotToTeam = new Map<string, string>();
+  for (const s of slots ?? []) {
+    if (s.real_team_id) slotToTeam.set(s.id as string, s.real_team_id as string);
+  }
+
+  const { data: matches, error: matchErr } = await supabase
+    .from("matches")
+    .select("id, home_slot_id, away_slot_id")
+    .like("round_id", "group-%");
+  if (matchErr) return { ok: false, reason: matchErr.message };
+  const matchTeams = new Map<string, { home: string; away: string }>();
+  for (const m of matches ?? []) {
+    const home = slotToTeam.get(m.home_slot_id as string);
+    const away = slotToTeam.get(m.away_slot_id as string);
+    if (home && away) matchTeams.set(m.id as string, { home, away });
+  }
+
+  const { data: preds, error: predErr } = await supabase
+    .from("predictions")
+    .select("match_id, predicted_home_score, predicted_away_score")
+    .eq("user_id", user_id);
+  if (predErr) return { ok: false, reason: predErr.message };
+
+  const scoresByGroup = new Map<string, MatchScore[]>();
+  for (const p of preds ?? []) {
+    const mt = matchTeams.get(p.match_id as string);
+    if (!mt) continue;
+    const letter = groupByTeam.get(mt.home);
+    if (!letter) continue;
+    if (!scoresByGroup.has(letter)) scoresByGroup.set(letter, []);
+    scoresByGroup.get(letter)!.push({
+      home_team_id: mt.home,
+      away_team_id: mt.away,
+      home_score: p.predicted_home_score as number,
+      away_score: p.predicted_away_score as number,
+    });
+  }
+
+  const teamIds: string[] = [];
+  for (const g of selectedGroups) {
+    const standings = computeGroupStandings(
+      scoresByGroup.get(g) ?? [],
+      teamsByGroup.get(g) ?? [],
+    );
+    const third = standings.find((s) => s.rank === 3);
+    if (third) teamIds.push(third.team_id);
+  }
+  return { ok: true, teamIds };
 }

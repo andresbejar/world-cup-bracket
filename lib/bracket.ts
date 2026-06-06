@@ -5,6 +5,8 @@
 // CLAUDE.md mandates 100% Vitest coverage on this file. A bug here
 // corrupts every user's bracket.
 
+import { lookupAnnexC, type WinnerSlot } from "./annex-c";
+
 export interface Team {
   /** ISO 3166 alpha-3, e.g. "ARG". Acts as the canonical sort key. */
   id: string;
@@ -231,13 +233,6 @@ export interface GroupStandings {
   standings: readonly GroupStanding[];
 }
 
-export interface ThirdPlacePick {
-  /** "best-3rd-1" through "best-3rd-8". */
-  slot_label: string;
-  /** ISO alpha-3 team_id, or null if the user hasn't filled this slot. */
-  team_id: string | null;
-}
-
 export type SlotSource =
   | "group_winner"
   | "group_runner_up"
@@ -249,50 +244,42 @@ export interface SlotAssignment {
   source: SlotSource;
 }
 
-export const THIRD_PLACE_SLOT_LABELS = Array.from(
-  { length: 8 },
-  (_, i) => `best-3rd-${i + 1}`,
+/**
+ * The 8 group winners (A,B,D,E,G,I,K,L) that face an Annex-C third-placed
+ * team in the R32. Winners of C,F,H,J are in fixed matches. Each maps to a
+ * winner slot "1{group}" in the Annex C table (lib/annex-c.ts) and to an
+ * R32 slot "best-3rd-vs-{group}".
+ */
+export const THIRD_PLACE_WINNER_GROUPS = [
+  "A", "B", "D", "E", "G", "I", "K", "L",
+] as const;
+
+/** The 8 R32 third-place slot labels, "best-3rd-vs-{winnerGroup}". */
+export const THIRD_PLACE_SLOT_LABELS = THIRD_PLACE_WINNER_GROUPS.map(
+  (g) => `best-3rd-vs-${g}`,
 ) as readonly string[];
 
 /**
- * Thrown by populateR32Slots when the third-place picks contain the
- * same team_id in two different slots. The UI prevents duplicates at
- * input time; this is a server-side defense for malformed payloads.
- */
-export class DuplicateThirdPlacePickError extends Error {
-  constructor(
-    readonly team_id: string,
-    readonly slot_labels: readonly string[],
-  ) {
-    super(
-      `team_id ${team_id} assigned to multiple third-place slots: ${slot_labels.join(", ")}`,
-    );
-    this.name = "DuplicateThirdPlacePickError";
-  }
-}
-
-/**
  * Build the 32 R32 slot occupants from a user's predicted group standings
- * and third-place dropdown picks.
+ * plus the set of groups whose 3rd-placed team they predict will qualify.
  *
  * - 24 deterministic slots: rank 1 of each group → "winner-{X}", rank 2
- *   → "runner-up-{X}". Pulled straight from the standings; no FIFA map
- *   knowledge needed here (the R32 *pairings* live in lib/bracket-structure;
- *   this function only emits slot occupants).
- * - 8 user-driven slots: third-place picks fill "best-3rd-1" through
- *   "best-3rd-8". A null team_id (or missing pick) keeps the slot
- *   unfilled; downstream knockout matches that reference it must show
- *   a disabled state.
- *
- * Throws DuplicateThirdPlacePickError if the same team_id appears in
- * more than one third-place pick.
+ *   → "runner-up-{X}". Pulled straight from the standings.
+ * - 8 Annex-C slots: "best-3rd-vs-{winner}". FIFA's Annex C lookup
+ *   (lib/annex-c.ts) decides which qualifying group's 3rd-placed team
+ *   faces each winner — this is what guarantees no same-group rematch.
+ *   The user never assigns a team to a specific slot; they only choose
+ *   the qualifying set. Resolved only when exactly 8 distinct groups are
+ *   selected; otherwise all 8 third-place slots stay null so the bracket
+ *   still renders mid-selection. (Strict validation lives in lookupAnnexC
+ *   and at the API/confirm boundary.)
  *
  * Order of returned slots is deterministic:
- *   winner-A..L, runner-up-A..L, best-3rd-1..8.
+ *   winner-A..L, runner-up-A..L, best-3rd-vs-{A,B,D,E,G,I,K,L}.
  */
 export function populateR32Slots(
   groups: readonly GroupStandings[],
-  thirdPlacePicks: readonly ThirdPlacePick[],
+  qualifyingThirdPlacedGroups: readonly GroupLetter[],
 ): SlotAssignment[] {
   const groupMap = new Map<string, readonly GroupStanding[]>();
   for (const g of groups) groupMap.set(g.group_letter, g.standings);
@@ -316,31 +303,28 @@ export function populateR32Slots(
     });
   }
 
-  // Third-place picks — keyed by slot_label so caller order doesn't matter.
-  const pickByLabel = new Map<string, string | null>();
-  for (const pick of thirdPlacePicks) {
-    pickByLabel.set(pick.slot_label, pick.team_id);
+  // Annex-C third-place slots, keyed by the winner they face.
+  const thirdTeamBySlot = new Map<string, string | null>();
+  for (const g of THIRD_PLACE_WINNER_GROUPS) {
+    thirdTeamBySlot.set(`best-3rd-vs-${g}`, null);
   }
-
-  // Detect duplicate team picks across the 8 slots.
-  const slotsByTeam = new Map<string, string[]>();
-  for (const label of THIRD_PLACE_SLOT_LABELS) {
-    const team_id = pickByLabel.get(label);
-    if (team_id == null) continue;
-    const existing = slotsByTeam.get(team_id);
-    if (existing) existing.push(label);
-    else slotsByTeam.set(team_id, [label]);
-  }
-  for (const [team_id, labels] of slotsByTeam) {
-    if (labels.length > 1) {
-      throw new DuplicateThirdPlacePickError(team_id, labels);
+  const distinct = new Set(qualifyingThirdPlacedGroups);
+  if (qualifyingThirdPlacedGroups.length === 8 && distinct.size === 8) {
+    const assignment = lookupAnnexC(qualifyingThirdPlacedGroups);
+    for (const g of THIRD_PLACE_WINNER_GROUPS) {
+      const assignedGroup = assignment[`1${g}` as WinnerSlot];
+      const standings = groupMap.get(assignedGroup);
+      thirdTeamBySlot.set(
+        `best-3rd-vs-${g}`,
+        standings?.find((s) => s.rank === 3)?.team_id ?? null,
+      );
     }
   }
-
-  for (const label of THIRD_PLACE_SLOT_LABELS) {
+  for (const g of THIRD_PLACE_WINNER_GROUPS) {
+    const slot_label = `best-3rd-vs-${g}`;
     assignments.push({
-      slot_label: label,
-      team_id: pickByLabel.get(label) ?? null,
+      slot_label,
+      team_id: thirdTeamBySlot.get(slot_label) ?? null,
       source: "third_place_pick",
     });
   }
@@ -382,7 +366,7 @@ export interface KnockoutMatchPrediction {
  * write anything downstream.
  *
  * Returns a single Map<slot_label, team_id | null>. R32 input labels
- * (winner-A, runner-up-C, best-3rd-3, ...) are seeded from the
+ * (winner-A, runner-up-C, best-3rd-vs-A, ...) are seeded from the
  * caller-provided `r32Slots`. Downstream labels are absent until a
  * prediction populates them; they resolve to undefined → caller treats
  * as null. A prediction whose `predicted_winner_label` references an
@@ -620,63 +604,35 @@ export function computeFinalistPoints(
 // Third-place R32 slot placement scoring (the FIFA-literacy bet)
 // ======================================================================
 
-export interface PredictedThirdPlaceAssignment {
-  /** "best-3rd-1" .. "best-3rd-8". */
-  slot_label: string;
-  /** Team_id the user thinks FIFA will place in this slot. */
-  team_id: string | null;
-}
-
-export interface BracketSlot {
-  slot_label: string;
-  /** Team_id FIFA actually placed here, or null if upstream not done. */
-  real_team_id: string | null;
-}
-
 /**
- * Score the user's 8 third-place R32 slot picks against reality. Each
- * correct slot is worth 1 pt (max 8). A pick is "correct" only if the
- * team_id the user assigned to a given slot literally equals the team
- * FIFA placed in that slot once group stage completes — picking a team
- * whose group didn't qualify a 3rd-place team means that team can't be
- * in any best-3rd slot, so it scores 0 there. No partial credit.
+ * Score the third-place qualifier side bet: +1 for each team in the
+ * user's predicted set of best-third teams that is also one of FIFA's
+ * real qualifying third-place teams. Max 8, no partial credit. This
+ * replaces the old per-slot placement bet: under Annex C the user no
+ * longer assigns teams to specific R32 slots (that's deterministic), so
+ * the bet is simply "did you pick the right 8 to advance?".
  *
- * Returns null when any of the 8 third-place R32 slots is still
- * unpopulated (real_team_id null). Group stage settles all 8 in one
- * shot, so partial-population means the polling job is mid-flight and
- * we shouldn't score yet.
- *
- * `realR32Slots` may include the full 32-slot R32 set; the function
- * filters to the 8 third-place ones.
+ * `predictedThirdTeamIds` — the user's predicted 3rd-placed team for each
+ * group they selected to qualify (the caller derives these from the
+ * user's predicted standings; may be fewer than 8 if the selection or
+ * standings are incomplete). Duplicates are counted once.
+ * `realQualifyingThirdTeamIds` — FIFA's actual qualifying third-place
+ * teams, or null until group stage has fully settled. Returns null in
+ * that case so the caller doesn't materialize points yet (re-runs safe).
  */
 export function computeThirdPlacePlacementPoints(
-  predictedAssignments: readonly PredictedThirdPlaceAssignment[],
-  realR32Slots: readonly BracketSlot[],
+  predictedThirdTeamIds: readonly string[],
+  realQualifyingThirdTeamIds: readonly string[] | null,
 ): number | null {
-  const thirdPlaceSet = new Set<string>(THIRD_PLACE_SLOT_LABELS);
-  const realByLabel = new Map<string, string | null>();
-  for (const slot of realR32Slots) {
-    if (thirdPlaceSet.has(slot.slot_label)) {
-      realByLabel.set(slot.slot_label, slot.real_team_id);
-    }
-  }
-
-  // Group stage finishes all 8 best-3rd slots at once. If any are
-  // still null, the polling job hasn't finished settling group stage —
-  // return null so the caller knows not to materialize points yet.
-  for (const label of THIRD_PLACE_SLOT_LABELS) {
-    if (realByLabel.get(label) == null) return null;
-  }
-
-  const pickByLabel = new Map<string, string | null>();
-  for (const p of predictedAssignments) {
-    pickByLabel.set(p.slot_label, p.team_id);
-  }
-
+  if (realQualifyingThirdTeamIds == null) return null;
+  const real = new Set(realQualifyingThirdTeamIds);
+  const counted = new Set<string>();
   let total = 0;
-  for (const label of THIRD_PLACE_SLOT_LABELS) {
-    const pick = pickByLabel.get(label);
-    if (pick != null && pick === realByLabel.get(label)) total += 1;
+  for (const id of predictedThirdTeamIds) {
+    if (real.has(id) && !counted.has(id)) {
+      counted.add(id);
+      total += 1;
+    }
   }
   return total;
 }
