@@ -7,13 +7,11 @@ import {
   computeMatchPoints,
   computeThirdPlacePlacementPoints,
   populateR32Slots,
-  DuplicateThirdPlacePickError,
   GROUP_LETTERS,
-  THIRD_PLACE_SLOT_LABELS,
   type ActualMatch,
-  type BracketSlot,
   type FinalistPicks,
   type FinalStandings,
+  type GroupLetter,
   type GroupStanding,
   type GroupStandings,
   type KnockoutMatchPrediction,
@@ -21,11 +19,9 @@ import {
   type MatchPrediction,
   type MatchScore,
   type MatchStatus,
-  type PredictedThirdPlaceAssignment,
   type ScoredPrediction,
   type SlotAssignment,
   type Team,
-  type ThirdPlacePick,
 } from "./bracket";
 import { R32_MATCHES } from "./bracket-structure";
 
@@ -300,29 +296,14 @@ function allGroups(): GroupStandings[] {
   return GROUP_LETTERS.map((l) => fakeGroup(l));
 }
 
-function fillThirdPlace(teamIds: readonly (string | null)[]): ThirdPlacePick[] {
-  return THIRD_PLACE_SLOT_LABELS.map((label, i) => ({
-    slot_label: label,
-    team_id: teamIds[i] ?? null,
-  }));
-}
+// The qualifying set {A..H} → Annex C key "ABCDEFGH". Used across the
+// tests below; its expected assignment is asserted in lib/annex-c.test.ts.
+const QUAL_ABCDEFGH: GroupLetter[] = ["A", "B", "C", "D", "E", "F", "G", "H"];
 
 describe("populateR32Slots", () => {
-  it("happy path: 12 groups + 8 third-place picks → 32 populated slots", () => {
-    // Pick 8 distinct third-place teams from any 8 groups.
-    const picks = fillThirdPlace([
-      "A3",
-      "B3",
-      "C3",
-      "D3",
-      "E3",
-      "F3",
-      "G3",
-      "H3",
-    ]);
-    const out = populateR32Slots(allGroups(), picks);
+  it("happy path: 12 groups + 8 qualifying thirds → 32 populated slots", () => {
+    const out = populateR32Slots(allGroups(), QUAL_ABCDEFGH);
     expect(out).toHaveLength(32);
-    // Every slot has a team.
     expect(out.every((s) => s.team_id !== null)).toBe(true);
     // First 12 are winners, in alpha order.
     expect(out.slice(0, 12).map((s) => [s.slot_label, s.team_id])).toEqual([
@@ -344,92 +325,90 @@ describe("populateR32Slots", () => {
       "A2", "B2", "C2", "D2", "E2", "F2",
       "G2", "H2", "I2", "J2", "K2", "L2",
     ]);
-    // Last 8 are third-place picks in slot order.
+    // Last 8 are the Annex-C third-place slots. Each "best-3rd-vs-{winner}"
+    // holds the rank-3 team of the group Annex C assigned (key ABCDEFGH:
+    // 1A→H, 1B→G, 1D→B, 1E→C, 1G→A, 1I→F, 1K→D, 1L→E).
     expect(out.slice(24).map((s) => [s.slot_label, s.team_id])).toEqual([
-      ["best-3rd-1", "A3"],
-      ["best-3rd-2", "B3"],
-      ["best-3rd-3", "C3"],
-      ["best-3rd-4", "D3"],
-      ["best-3rd-5", "E3"],
-      ["best-3rd-6", "F3"],
-      ["best-3rd-7", "G3"],
-      ["best-3rd-8", "H3"],
+      ["best-3rd-vs-A", "H3"],
+      ["best-3rd-vs-B", "G3"],
+      ["best-3rd-vs-D", "B3"],
+      ["best-3rd-vs-E", "C3"],
+      ["best-3rd-vs-G", "A3"],
+      ["best-3rd-vs-I", "F3"],
+      ["best-3rd-vs-K", "D3"],
+      ["best-3rd-vs-L", "E3"],
     ]);
-    // Source labels correct.
     expect(out.slice(0, 12).every((s) => s.source === "group_winner")).toBe(true);
     expect(out.slice(12, 24).every((s) => s.source === "group_runner_up")).toBe(true);
     expect(out.slice(24).every((s) => s.source === "third_place_pick")).toBe(true);
   });
 
-  it("every R32 match's home and away slot resolves to a populated team", () => {
-    // Verifies our slot-label vocabulary matches what bracket-structure.ts
-    // expects for the FIFA-published 2026 R32 pairings.
-    const picks = fillThirdPlace([
-      "A3", "B3", "C3", "D3", "E3", "F3", "G3", "H3",
-    ]);
-    const slots = populateR32Slots(allGroups(), picks);
+  it("full bracket realism: 16 R32 matches, every team once, all cross-group", () => {
+    const slots = populateR32Slots(allGroups(), QUAL_ABCDEFGH);
     const byLabel = new Map(slots.map((s) => [s.slot_label, s.team_id]));
 
     expect(R32_MATCHES).toHaveLength(16);
+    const seen = new Set<string>();
     for (const m of R32_MATCHES) {
-      expect(byLabel.has(m.home_slot_label)).toBe(true);
-      expect(byLabel.has(m.away_slot_label)).toBe(true);
-      expect(byLabel.get(m.home_slot_label)).not.toBeNull();
-      expect(byLabel.get(m.away_slot_label)).not.toBeNull();
+      const home = byLabel.get(m.home_slot_label);
+      const away = byLabel.get(m.away_slot_label);
+      expect(home).not.toBeNull();
+      expect(away).not.toBeNull();
+      // Synthetic team_id's first char is its group letter — assert the
+      // two sides of every match come from different groups.
+      expect(home![0]).not.toBe(away![0]);
+      seen.add(home!);
+      seen.add(away!);
     }
-
-    // Spot-check a known pairing from the FIFA 2026 bracket.
-    const r32_1 = R32_MATCHES.find((m) => m.id === "r32-1")!;
-    expect(r32_1.home_slot_label).toBe("winner-A");
-    expect(byLabel.get(r32_1.home_slot_label)).toBe("A1");
+    expect(seen.size).toBe(32); // every team appears exactly once
   });
 
-  it("third-place dropdown collision throws DuplicateThirdPlacePickError", () => {
-    // A3 picked for both best-3rd-1 and best-3rd-5.
-    const picks = fillThirdPlace([
-      "A3", "B3", "C3", "D3", "A3", "F3", "G3", "H3",
-    ]);
-    expect(() => populateR32Slots(allGroups(), picks)).toThrow(
-      DuplicateThirdPlacePickError,
-    );
-    try {
-      populateR32Slots(allGroups(), picks);
-    } catch (e) {
-      const err = e as DuplicateThirdPlacePickError;
-      expect(err.team_id).toBe("A3");
-      expect(err.slot_labels).toEqual(["best-3rd-1", "best-3rd-5"]);
-    }
+  it("Mexico/Korea: a group winner never faces its own group's 3rd", () => {
+    // winner-A's R32 match is winner-A vs best-3rd-vs-A. With group A
+    // qualifying, Annex C guarantees the 3rd-placed side is NOT A3.
+    const out = populateR32Slots(allGroups(), QUAL_ABCDEFGH);
+    const byLabel = new Map(out.map((s) => [s.slot_label, s.team_id]));
+    const m = R32_MATCHES.find((x) => x.home_slot_label === "winner-A")!;
+    expect(byLabel.get(m.home_slot_label)).toBe("A1");
+    expect(byLabel.get(m.away_slot_label)).not.toBe("A3");
   });
 
-  it("missing third-place pick → that slot's team_id is null, others fine", () => {
-    // best-3rd-3 left null; the rest filled.
-    const picks = fillThirdPlace([
-      "A3", "B3", null, "D3", "E3", "F3", "G3", "H3",
-    ]);
-    const out = populateR32Slots(allGroups(), picks);
-    const slot3 = out.find((s) => s.slot_label === "best-3rd-3")!;
-    const slot4 = out.find((s) => s.slot_label === "best-3rd-4")!;
-    expect(slot3.team_id).toBeNull();
-    expect(slot3.source).toBe("third_place_pick");
-    expect(slot4.team_id).toBe("D3");
-    // Group winners + runners-up still all populated.
+  it("fewer than 8 qualifying groups → third-place slots null (renderable mid-selection)", () => {
+    const out = populateR32Slots(allGroups(), ["A", "B", "C"] as GroupLetter[]);
+    const thirds = out.filter((s) => s.source === "third_place_pick");
+    expect(thirds).toHaveLength(8);
+    expect(thirds.every((s) => s.team_id === null)).toBe(true);
+    // winners/runners still populated mid-selection.
+    expect(out.find((s) => s.slot_label === "winner-A")?.team_id).toBe("A1");
+  });
+
+  it("duplicate group in the set → third slots null (not 8 distinct), no throw", () => {
+    const dup = ["A", "A", "B", "C", "D", "E", "F", "G"] as GroupLetter[];
+    const out = populateR32Slots(allGroups(), dup);
     expect(
       out
-        .filter((s) => s.source !== "third_place_pick")
-        .every((s) => s.team_id !== null),
+        .filter((s) => s.source === "third_place_pick")
+        .every((s) => s.team_id === null),
     ).toBe(true);
   });
 
-  it("third-place picks omitted entirely → all 8 third-place slots null", () => {
+  it("empty qualifying set → all 8 third-place slots null", () => {
     const out = populateR32Slots(allGroups(), []);
-    const thirdSlots = out.filter((s) => s.source === "third_place_pick");
-    expect(thirdSlots).toHaveLength(8);
-    expect(thirdSlots.every((s) => s.team_id === null)).toBe(true);
+    const thirds = out.filter((s) => s.source === "third_place_pick");
+    expect(thirds).toHaveLength(8);
+    expect(thirds.every((s) => s.team_id === null)).toBe(true);
+  });
+
+  it("assigned group has no standings → that third slot null, others resolve", () => {
+    // Drop group H. With set {A..H}, Annex C maps 1A→H, so best-3rd-vs-A
+    // can't resolve and comes out null; the rest still fill.
+    const groups = allGroups().filter((g) => g.group_letter !== "H");
+    const out = populateR32Slots(groups, QUAL_ABCDEFGH);
+    expect(out.find((s) => s.slot_label === "best-3rd-vs-A")?.team_id).toBeNull();
+    expect(out.find((s) => s.slot_label === "best-3rd-vs-B")?.team_id).toBe("G3");
   });
 
   it("missing group standings → that group's winner + runner-up slots are null", () => {
-    // Drop group F. Winner-F and runner-up-F should come out null but the
-    // function should not throw — the UI may be loading partial state.
     const groups = allGroups().filter((g) => g.group_letter !== "F");
     const out = populateR32Slots(groups, []);
     expect(out.find((s) => s.slot_label === "winner-F")?.team_id).toBeNull();
@@ -665,150 +644,46 @@ describe("computeFinalistPoints", () => {
 // computeThirdPlacePlacementPoints
 // ----------------------------------------------------------------------
 
-function thirdPlaceSlots(
-  realByLabel: Record<string, string | null>,
-): BracketSlot[] {
-  // Build a full 8-slot real R32 third-place set, defaulting unspecified
-  // slots to null. Plus a couple of non-third-place slots to verify the
-  // function filters correctly.
-  return [
-    ...THIRD_PLACE_SLOT_LABELS.map((label) => ({
-      slot_label: label,
-      real_team_id: realByLabel[label] ?? null,
-    })),
-    { slot_label: "winner-A", real_team_id: "ARG" },
-    { slot_label: "runner-up-B", real_team_id: "BRA" },
-  ];
-}
-
-function thirdPlacePicks(
-  picksByLabel: Record<string, string | null>,
-): PredictedThirdPlaceAssignment[] {
-  return THIRD_PLACE_SLOT_LABELS.map((label) => ({
-    slot_label: label,
-    team_id: picksByLabel[label] ?? null,
-  }));
-}
-
 describe("computeThirdPlacePlacementPoints", () => {
-  const real = {
-    "best-3rd-1": "TUN",
-    "best-3rd-2": "MEX",
-    "best-3rd-3": "JPN",
-    "best-3rd-4": "ECU",
-    "best-3rd-5": "POL",
-    "best-3rd-6": "USA",
-    "best-3rd-7": "MAR",
-    "best-3rd-8": "CMR",
-  };
+  // FIFA's real 8 qualifying third-placed teams.
+  const real = ["TUN", "MEX", "JPN", "ECU", "POL", "USA", "MAR", "CMR"];
 
-  it("all 8 correct → 8 pts", () => {
-    expect(
-      computeThirdPlacePlacementPoints(
-        thirdPlacePicks(real),
-        thirdPlaceSlots(real),
-      ),
-    ).toBe(8);
+  it("all 8 predicted correctly → 8 pts", () => {
+    expect(computeThirdPlacePlacementPoints(real, real)).toBe(8);
   });
 
-  it("all 8 wrong → 0 pts", () => {
-    const allWrong = {
-      "best-3rd-1": "ARG",
-      "best-3rd-2": "BRA",
-      "best-3rd-3": "FRA",
-      "best-3rd-4": "GER",
-      "best-3rd-5": "ESP",
-      "best-3rd-6": "ENG",
-      "best-3rd-7": "ITA",
-      "best-3rd-8": "PRT",
-    };
+  it("none of the predicted teams qualified → 0 pts", () => {
     expect(
       computeThirdPlacePlacementPoints(
-        thirdPlacePicks(allWrong),
-        thirdPlaceSlots(real),
+        ["ARG", "BRA", "FRA", "GER", "ESP", "ENG", "ITA", "PRT"],
+        real,
       ),
     ).toBe(0);
   });
 
-  it("partial — 3 of 8 correct → 3 pts", () => {
-    const partial = {
-      "best-3rd-1": "TUN", // ✓
-      "best-3rd-2": "BRA", // ✗
-      "best-3rd-3": "JPN", // ✓
-      "best-3rd-4": "GER", // ✗
-      "best-3rd-5": "ESP", // ✗
-      "best-3rd-6": "USA", // ✓
-      "best-3rd-7": "ITA", // ✗
-      "best-3rd-8": "PRT", // ✗
-    };
+  it("partial — 3 of the 8 predicted teams are in the real set → 3 pts", () => {
     expect(
       computeThirdPlacePlacementPoints(
-        thirdPlacePicks(partial),
-        thirdPlaceSlots(real),
+        ["TUN", "BRA", "JPN", "GER", "ESP", "USA", "ITA", "PRT"],
+        real,
       ),
     ).toBe(3);
   });
 
-  it("user picked a team whose group's 3rd-place didn't advance → 0 for that slot", () => {
-    // The user picked PER (Peru) for best-3rd-1, but Peru's group's 3rd-
-    // place team didn't qualify as one of the 8 advancing thirds. Reality
-    // for that slot is TUN — so the slot scores 0. Other slots can still
-    // score normally.
-    const picks = {
-      "best-3rd-1": "PER", // didn't advance → 0
-      "best-3rd-2": "MEX", // ✓
-      "best-3rd-3": "JPN", // ✓
-      "best-3rd-4": "ECU", // ✓
-      "best-3rd-5": "POL", // ✓
-      "best-3rd-6": "USA", // ✓
-      "best-3rd-7": "MAR", // ✓
-      "best-3rd-8": "CMR", // ✓
-    };
-    expect(
-      computeThirdPlacePlacementPoints(
-        thirdPlacePicks(picks),
-        thirdPlaceSlots(real),
-      ),
-    ).toBe(7);
+  it("real set not yet known (group stage unsettled) → returns null", () => {
+    expect(computeThirdPlacePlacementPoints(real, null)).toBeNull();
   });
 
-  it("R32 best-3rd slots not yet populated → returns null", () => {
-    // Group stage hasn't fully settled — best-3rd-7 still null. The
-    // function returns null so the caller doesn't materialize partial
-    // points; running it again later (after the polling job populates
-    // the slot) is idempotent.
-    const partialReal = { ...real, "best-3rd-7": null };
-    expect(
-      computeThirdPlacePlacementPoints(
-        thirdPlacePicks(real),
-        thirdPlaceSlots(partialReal),
-      ),
-    ).toBeNull();
+  it("incomplete predicted set (fewer than 8) → counts the overlap", () => {
+    expect(computeThirdPlacePlacementPoints(["TUN", "JPN", "USA"], real)).toBe(3);
   });
 
-  it("missing pick (user skipped a slot) → that slot scores 0", () => {
-    const skipped = { ...real, "best-3rd-3": null };
-    expect(
-      computeThirdPlacePlacementPoints(
-        thirdPlacePicks(skipped),
-        thirdPlaceSlots(real),
-      ),
-    ).toBe(7);
+  it("duplicate predicted team is counted once", () => {
+    expect(computeThirdPlacePlacementPoints(["TUN", "TUN", "JPN"], real)).toBe(2);
   });
 
-  it("realR32Slots missing some best-3rd slots entirely → null", () => {
-    // The polling job upserted only 5 of the 8 best-3rd slots so far.
-    // Treat as not-yet-ready.
-    const slots: BracketSlot[] = [
-      { slot_label: "best-3rd-1", real_team_id: "TUN" },
-      { slot_label: "best-3rd-2", real_team_id: "MEX" },
-      { slot_label: "best-3rd-3", real_team_id: "JPN" },
-      { slot_label: "best-3rd-4", real_team_id: "ECU" },
-      { slot_label: "best-3rd-5", real_team_id: "POL" },
-    ];
-    expect(
-      computeThirdPlacePlacementPoints(thirdPlacePicks(real), slots),
-    ).toBeNull();
+  it("empty predicted set → 0", () => {
+    expect(computeThirdPlacePlacementPoints([], real)).toBe(0);
   });
 });
 

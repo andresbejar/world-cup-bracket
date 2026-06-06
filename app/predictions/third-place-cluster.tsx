@@ -1,216 +1,200 @@
 "use client";
 
-import { useMemo } from "react";
 import type { HydratedTeam } from "@/lib/group-data";
 
-// The 8 R32 best-3rd-N slots, picked manually by the user from the
-// 12 teams their group-stage predictions ranked third in each group.
-// This stands in for FIFA's ~495-permutation tiebreaker table — turning
-// a tedious lookup into a stakes-bearing side bet (+1 pt per correct pick).
+// "Best third-placed teams" selector. The user picks WHICH 8 of the 12
+// groups' third-placed teams advance to the R32. FIFA's Annex C lookup
+// (lib/annex-c.ts) then deterministically assigns each one its R32
+// opponent — so there is deliberately NO way to drag a team into a
+// specific slot here. That assignment is what guarantees no group winner
+// ever faces a 3rd-placed team from its own group.
 //
 // Two render modes:
-//   - Pre-resolution: 8 dropdowns. The user picks; correctness unknowable.
-//   - Post-resolution: once `bracket_slots.real_team_id` is set on all 8
-//     best-3rd-N slots (admin out-of-band, post group stage), each row
-//     swaps dropdown → resolved team + correctness indicator (+1 / 0).
+//   - Pre-resolution: 12 checkboxes, exactly 8 selectable. Rows are
+//     sorted by the user's predicted points → GD → GS (display-only), with
+//     a "below the cutoff" divider after the 8th row anchored to that
+//     ranking (it does not move as the user toggles).
+//   - Post-resolution: once FIFA's real qualifying set is known, each row
+//     shows whether the user's pick qualified (+1) or not.
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-interface SlotMeta {
-  /** bracket_slot.id, e.g. "r32-best-3rd-3" — what we POST to the API. */
-  slot_id: string;
-  /** "best-3rd-1" through "best-3rd-8" — display index. */
-  slot_label: string;
+export interface ThirdPlaceRow {
+  group_letter: string;
+  team: HydratedTeam;
+  points: number;
+  goal_difference: number;
+  goals_for: number;
 }
 
 interface Props {
-  slots: SlotMeta[];
-  /** The 12 teams the user's group predictions ranked 3rd, indexed by group letter. */
-  predictedThirds: HydratedTeam[];
-  /** slot_id → predicted team_id (only entries the user has picked). */
-  picks: ReadonlyMap<string, string>;
+  /** The 12 predicted third-placed teams, pre-sorted points→GD→GS desc. */
+  rows: ThirdPlaceRow[];
+  /** Group letters the user has selected to qualify. */
+  selected: ReadonlySet<string>;
+  /** group_letter → save status. */
   saveStatus: ReadonlyMap<string, SaveStatus>;
-  /** True once all 72 group-stage matches have been predicted; gates the cluster. */
+  /** True once all 72 group-stage matches are predicted; gates the selector. */
   groupPredictionsComplete: boolean;
-  /** slot_label → real_team_id for whichever slots FIFA has settled. */
-  realTeamIdBySlotLabel: Record<string, string>;
-  teamCodeById: ReadonlyMap<string, string>;
-  teamNameById: ReadonlyMap<string, string>;
-  onChange: (slot_id: string, team_id: string | null) => void;
+  /**
+   * FIFA's real 8 qualifying third-placed team_ids, or null until group
+   * stage has settled. When set, the selector switches to results mode.
+   */
+  realQualifyingThirdTeamIds: ReadonlySet<string> | null;
+  onToggle: (group_letter: string, selected: boolean) => void;
 }
 
+const MAX = 8;
+
 export function ThirdPlaceCluster({
-  slots,
-  predictedThirds,
-  picks,
+  rows,
+  selected,
   saveStatus,
   groupPredictionsComplete,
-  realTeamIdBySlotLabel,
-  teamCodeById,
-  teamNameById,
-  onChange,
+  realQualifyingThirdTeamIds,
+  onToggle,
 }: Props) {
-  // Build the "which team is already taken by which slot" map so we can
-  // disable duplicates across dropdowns.
-  const slotByTeam = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const [slot_id, team_id] of picks) m.set(team_id, slot_id);
-    return m;
-  }, [picks]);
+  const resolved = realQualifyingThirdTeamIds != null;
+  const count = selected.size;
+  const atCapacity = count >= MAX;
 
-  const filledCount = picks.size;
-  // Resolved when FIFA has placed all 8 best-3rd teams (admin write).
-  // Partial resolution is impossible by design — group stage settles all
-  // 8 in one shot — but we defensively require ALL slots resolved before
-  // switching modes so a mid-flight write can't show inconsistent state.
-  const resolved =
-    slots.length > 0 &&
-    slots.every((s) => !!realTeamIdBySlotLabel[s.slot_label]);
   const correctCount = resolved
-    ? slots.reduce((acc, s) => {
-        const real = realTeamIdBySlotLabel[s.slot_label];
-        const picked = picks.get(s.slot_id);
-        return picked && picked === real ? acc + 1 : acc;
+    ? rows.reduce((acc, r) => {
+        const picked = selected.has(r.group_letter);
+        const qualified = realQualifyingThirdTeamIds!.has(r.team.id);
+        return picked && qualified ? acc + 1 : acc;
       }, 0)
     : 0;
+
   const disabled = resolved || !groupPredictionsComplete;
+  const valid = count === MAX;
 
   return (
     <section
-      aria-label="Third-place R32 slot picks"
+      aria-label="Best third-placed teams"
       className="mb-6 rounded-md border border-border bg-surface px-5 py-4"
     >
       <header className="flex items-end justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-muted">
-            BEST-3RD R32 SLOTS · SIDE BET
+            BEST THIRD-PLACED TEAMS · SIDE BET
           </p>
           <h3
             className="mt-1 font-display text-2xl leading-tight"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Third-place placements
+            Which 8 thirds advance?
           </h3>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim tabular-nums whitespace-nowrap">
+        <span
+          aria-live="polite"
+          className={
+            "font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums whitespace-nowrap " +
+            (resolved
+              ? "text-text-dim"
+              : valid
+                ? "text-green-correct"
+                : "text-accent")
+          }
+        >
           {resolved
             ? `${correctCount}/8 CORRECT`
-            : `${filledCount}/8 PICKED`}
+            : `${count} OF 8 SELECTED`}
         </span>
       </header>
 
-      <ul className="mt-5 grid grid-cols-1 gap-2 md:grid-cols-2">
-        {slots.map((slot, idx) => {
-          const picked = picks.get(slot.slot_id) ?? "";
-          const status = saveStatus.get(slot.slot_id) ?? "idle";
-          const realTeamId = realTeamIdBySlotLabel[slot.slot_label];
-          if (resolved && realTeamId) {
-            const correct = picked === realTeamId;
-            const realCode = teamCodeById.get(realTeamId) ?? realTeamId;
-            const realName = teamNameById.get(realTeamId) ?? null;
-            const pickedCode = picked
-              ? teamCodeById.get(picked) ?? picked
-              : null;
+      <ul className="mt-5 flex flex-col gap-2">
+        {rows.map((row, idx) => {
+          const picked = selected.has(row.group_letter);
+          const status = saveStatus.get(row.group_letter) ?? "idle";
+          const showCutoff = !resolved && idx === MAX;
+
+          if (resolved) {
+            const qualified = realQualifyingThirdTeamIds!.has(row.team.id);
+            const correct = picked && qualified;
             return (
-              <li key={slot.slot_id} className="flex items-center gap-3">
-                <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted tabular-nums">
-                  3RD-{idx + 1}
+              <li
+                key={row.group_letter}
+                className={cutoffClass(showCutoff) + " flex items-center gap-3"}
+              >
+                <span className="w-10 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted tabular-nums">
+                  3{row.group_letter}
                 </span>
                 <div
                   className={
                     "flex flex-1 items-center gap-2 rounded-sm border bg-bg px-3 py-2 " +
                     (correct
                       ? "border-green-correct/40"
-                      : "border-red-wrong/40")
+                      : picked
+                        ? "border-red-wrong/40"
+                        : "border-border opacity-60")
                   }
                 >
                   <span className="font-mono text-sm font-bold uppercase tracking-[0.06em] text-text-primary">
-                    {realCode}
+                    {row.team.code}
                   </span>
-                  {realName ? (
-                    <span className="truncate text-sm text-text-muted">
-                      {realName}
-                    </span>
-                  ) : null}
-                  {!correct && pickedCode ? (
-                    <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-                      you predicted {pickedCode}
-                    </span>
-                  ) : null}
-                  {!correct && !pickedCode ? (
-                    <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-                      no pick
-                    </span>
-                  ) : null}
+                  <span className="truncate text-sm text-text-muted">
+                    {row.team.name}
+                  </span>
+                  <span className="ml-auto font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+                    {picked ? "you picked" : qualified ? "advanced" : ""}
+                  </span>
                 </div>
                 <span
                   className={
-                    "shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.06em] tabular-nums " +
-                    (correct ? "text-green-correct" : "text-red-wrong")
+                    "w-10 shrink-0 text-right font-mono text-[10px] font-bold uppercase tracking-[0.06em] tabular-nums " +
+                    (correct ? "text-green-correct" : "text-text-dim")
                   }
                 >
-                  {correct ? "+1 PT" : "0 PT"}
+                  {correct ? "+1" : picked ? "0" : ""}
                 </span>
               </li>
             );
           }
+
+          const lockOut = disabled || (!picked && atCapacity);
           return (
-            <li key={slot.slot_id} className="flex items-center gap-3">
-              <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted tabular-nums">
-                3RD-{idx + 1}
-              </span>
-              <div className="relative flex-1">
-                <select
-                  value={picked}
-                  disabled={disabled}
-                  onChange={(e) =>
-                    onChange(slot.slot_id, e.target.value || null)
-                  }
-                  aria-label={`Best-3rd slot ${idx + 1} team pick`}
-                  style={{ minHeight: 44 }}
-                  className={
-                    "w-full appearance-none rounded-sm border bg-bg px-3 py-2 pr-8 font-mono text-sm text-text-primary outline-none transition-colors duration-[var(--motion-micro)] focus:border-accent-muted disabled:cursor-not-allowed disabled:opacity-40 " +
-                    (picked
-                      ? "border-accent-muted/50"
-                      : "border-border")
-                  }
-                >
-                  <option value="">
-                    {disabled ? "—" : "Pick a 3rd-place team"}
-                  </option>
-                  {predictedThirds.map((team) => {
-                    const takenBy = slotByTeam.get(team.id);
-                    const takenElsewhere =
-                      takenBy != null && takenBy !== slot.slot_id;
-                    return (
-                      <option
-                        key={team.id}
-                        value={team.id}
-                        disabled={takenElsewhere}
-                      >
-                        {takenElsewhere
-                          ? `${team.code} — ${team.name} · already picked`
-                          : `${team.code} — ${team.name} · Group ${team.group_letter}`}
-                      </option>
-                    );
-                  })}
-                </select>
-                {/* Chevron */}
-                <span
-                  aria-hidden
-                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs text-text-dim"
-                >
-                  ▾
-                </span>
-              </div>
-              <span
+            <li
+              key={row.group_letter}
+              className={cutoffClass(showCutoff)}
+            >
+              <label
                 className={
-                  "shrink-0 font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums " +
-                  (saveStatusClass(status) ?? "text-text-muted")
+                  "flex items-center gap-3 rounded-sm border px-3 py-2 transition-colors duration-[var(--motion-micro)] " +
+                  (picked
+                    ? "border-accent-muted/50 bg-surface-high"
+                    : "border-border bg-bg") +
+                  (lockOut
+                    ? " cursor-not-allowed opacity-40"
+                    : " cursor-pointer hover:border-accent-muted")
                 }
+                style={{ minHeight: 44 }}
               >
-                {saveStatusLabel(status, !!picked)}
-              </span>
+                <input
+                  type="checkbox"
+                  checked={picked}
+                  disabled={lockOut}
+                  onChange={(e) => onToggle(row.group_letter, e.target.checked)}
+                  aria-label={`Select 3rd-placed team of Group ${row.group_letter} (${row.team.name}) to advance`}
+                  className="h-4 w-4 shrink-0 accent-[var(--color-accent,#F59E0B)]"
+                />
+                <span className="w-8 shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-text-muted tabular-nums">
+                  3{row.group_letter}
+                </span>
+                <span className="font-mono text-sm font-bold uppercase tracking-[0.06em] text-text-primary">
+                  {row.team.code}
+                </span>
+                <span className="truncate text-sm text-text-muted">
+                  {row.team.name}
+                </span>
+                <span className="ml-auto shrink-0 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim tabular-nums">
+                  {status === "saving"
+                    ? "…"
+                    : status === "error"
+                      ? "retry"
+                      : `${row.points}PT ${fmtGd(row.goal_difference)}`}
+                </span>
+              </label>
             </li>
           );
         })}
@@ -218,24 +202,24 @@ export function ThirdPlaceCluster({
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
         {resolved
-          ? `FIFA placed the 8 third-place teams. You scored ${correctCount} of 8 possible points here.`
+          ? `FIFA's 8 best thirds are set. You scored ${correctCount} of 8 here.`
           : !groupPredictionsComplete
             ? "Finish your group-stage predictions to unlock these picks."
-            : "+1 PT IF CORRECT · whichever group's 3rd-place lands in each slot per FIFA's bracket structure."}
+            : valid
+              ? "Locked in 8 · FIFA's Annex C decides each one's R32 opponent (+1 PT per correct qualifier)."
+              : `Select exactly 8 of 12 · ${MAX - count} to go. The bracket fills in once you've picked 8.`}
       </p>
     </section>
   );
 }
 
-function saveStatusLabel(status: SaveStatus, hasPick: boolean): string {
-  if (status === "saving") return "saving…";
-  if (status === "saved") return "saved";
-  if (status === "error") return "retry";
-  return hasPick ? "+1 PT" : "+1 PT";
+function cutoffClass(showCutoff: boolean): string {
+  // Thin separator above the 9th sorted row — a visual hint of where the
+  // score-based tiebreakers would land. Anchored to the ranking, not the
+  // selection (it never moves as the user toggles).
+  return showCutoff ? "border-t border-dashed border-border pt-2 mt-1" : "";
 }
 
-function saveStatusClass(status: SaveStatus): string | null {
-  if (status === "saved") return "text-green-correct";
-  if (status === "error") return "text-red-wrong";
-  return null;
+function fmtGd(gd: number): string {
+  return gd > 0 ? `+${gd}` : `${gd}`;
 }

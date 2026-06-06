@@ -1,19 +1,26 @@
-// Reality phase — turns finished group matches into the 24 R32 slot
-// real_team_ids (winner-{A..L} + runner-up-{A..L}). The 8 best-3rd
-// slots are FIFA's 495-permutation tiebreaker territory and are set
-// out-of-band by an admin once FIFA publishes the official mapping;
-// the scoring engine treats them as null until that happens, and
-// computeThirdPlacePlacementPoints returns null too (no third-place
-// bonus materializes yet — re-runs are safe).
+// Reality phase — turns finished group matches into the R32 slot
+// real_team_ids. The 24 group-driven slots (winner-{A..L} +
+// runner-up-{A..L}) are written automatically once every group match is
+// finished. The 8 "best-3rd-vs-{winner}" slots additionally require
+// FIFA's real qualifying set (which 8 of the 12 third-placed teams
+// advance) — that set depends on disciplinary/ranking tiebreakers we
+// can't simulate, so it's supplied out-of-band by an admin and applied
+// FIFA-compliantly via Annex C in populateRealBestThirdSlots. Until then
+// those slots stay null and computeThirdPlacePlacementPoints returns null
+// (no third-place bonus materializes; re-runs are safe).
 //
 // All writes are upserts so re-running mid-tournament is a no-op.
 
 import {
   computeGroupStandings,
   GROUP_LETTERS,
+  THIRD_PLACE_WINNER_GROUPS,
+  type GroupLetter,
+  type GroupStanding,
   type MatchScore,
   type Team,
 } from "./bracket";
+import { lookupAnnexC, type WinnerSlot } from "./annex-c";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PopulateOutcome =
@@ -22,40 +29,35 @@ export type PopulateOutcome =
   | { ok: false; reason: string };
 
 /**
- * After every group-stage match has flipped to `finished`, compute the
- * real group standings and write `bracket_slots.real_team_id` for the
- * 24 group-driven R32 slots (12 winners + 12 runners-up). The 8
- * best-3rd slots are left to admin override — see the doc-block.
- *
- * Idempotent: re-running once R32 has started is a no-op (the upsert
- * writes the same value).
+ * Compute real group standings for all 12 groups from finished group
+ * matches. Returns a `skipped` outcome (no standings) if any group match
+ * is still unfinished — we never write partial standings.
  */
-export async function populateRealR32SlotsFromGroupResults(
+async function loadRealStandingsByGroup(
   supabase: SupabaseClient,
-): Promise<PopulateOutcome> {
-  // Load every group match. If any are not yet finished, bail — we
-  // don't want to write partial standings.
+):
+  | Promise<
+      | { ok: true; standings: Map<string, GroupStanding[]> }
+      | { ok: true; standings: null; skipped: string }
+      | { ok: false; reason: string }
+    > {
   const { data: matches, error: matchErr } = await supabase
     .from("matches")
-    .select(
-      "id, round_id, home_slot_id, away_slot_id, home_score, away_score, status",
-    )
+    .select("id, round_id, home_slot_id, away_slot_id, home_score, away_score, status")
     .like("round_id", "group-%");
   if (matchErr) return { ok: false, reason: `matches: ${matchErr.message}` };
   if (!matches || matches.length === 0) {
-    return { ok: true, written: 0, skipped: "no group matches loaded" };
+    return { ok: true, standings: null, skipped: "no group matches loaded" };
   }
   const finished = matches.filter((m) => m.status === "finished");
   if (finished.length < matches.length) {
     return {
       ok: true,
-      written: 0,
+      standings: null,
       skipped: `${finished.length}/${matches.length} group matches finished`,
     };
   }
 
-  // Resolve slot_id → real_team_id for the team-XYZ group slots so we
-  // can map each match's home/away to a team_id for standings input.
   const { data: groupSlots, error: slotErr } = await supabase
     .from("bracket_slots")
     .select("id, real_team_id")
@@ -66,32 +68,22 @@ export async function populateRealR32SlotsFromGroupResults(
     if (s.real_team_id) slotToTeam.set(s.id, s.real_team_id);
   }
 
-  // Pull team → group letter so we can group standings inputs.
   const { data: teams, error: teamsErr } = await supabase
     .from("teams")
     .select("id, group_letter");
   if (teamsErr) return { ok: false, reason: `teams: ${teamsErr.message}` };
   const groupLetterByTeam = new Map<string, string>();
+  const teamsByGroup = new Map<string, Team[]>();
+  for (const letter of GROUP_LETTERS) teamsByGroup.set(letter, []);
   for (const t of teams ?? []) {
-    groupLetterByTeam.set(t.id as string, t.group_letter as string);
+    const id = t.id as string;
+    const letter = t.group_letter as string;
+    groupLetterByTeam.set(id, letter);
+    teamsByGroup.get(letter)?.push({ id, group_letter: letter });
   }
 
-  // Bucket scores by group.
   const scoresByGroup = new Map<string, MatchScore[]>();
-  const teamsByGroup = new Map<string, Team[]>();
-  for (const letter of GROUP_LETTERS) {
-    scoresByGroup.set(letter, []);
-    teamsByGroup.set(letter, []);
-  }
-  for (const t of teams ?? []) {
-    const letter = groupLetterByTeam.get(t.id as string);
-    if (letter) {
-      teamsByGroup.get(letter)?.push({
-        id: t.id as string,
-        group_letter: letter,
-      });
-    }
-  }
+  for (const letter of GROUP_LETTERS) scoresByGroup.set(letter, []);
   for (const m of finished) {
     const home = slotToTeam.get(m.home_slot_id as string);
     const away = slotToTeam.get(m.away_slot_id as string);
@@ -107,35 +99,92 @@ export async function populateRealR32SlotsFromGroupResults(
     });
   }
 
-  // Compute standings + build the 24 writes.
-  const writes: { id: string; real_team_id: string }[] = [];
+  const standings = new Map<string, GroupStanding[]>();
   for (const letter of GROUP_LETTERS) {
-    const teamsInGroup = teamsByGroup.get(letter) ?? [];
-    const scores = scoresByGroup.get(letter) ?? [];
-    const standings = computeGroupStandings(scores, teamsInGroup);
-    const first = standings.find((s) => s.rank === 1);
-    const second = standings.find((s) => s.rank === 2);
-    if (first) {
-      writes.push({
-        id: `r32-winner-${letter}`,
-        real_team_id: first.team_id,
-      });
-    }
-    if (second) {
-      writes.push({
-        id: `r32-runner-up-${letter}`,
-        real_team_id: second.team_id,
-      });
-    }
+    standings.set(
+      letter,
+      computeGroupStandings(
+        scoresByGroup.get(letter) ?? [],
+        teamsByGroup.get(letter) ?? [],
+      ),
+    );
+  }
+  return { ok: true, standings };
+}
+
+/**
+ * After every group-stage match has flipped to `finished`, compute the
+ * real group standings and write `bracket_slots.real_team_id` for the 24
+ * group-driven R32 slots (12 winners + 12 runners-up). The 8 best-3rd-vs
+ * slots are handled by populateRealBestThirdSlots once the qualifying set
+ * is known. Idempotent.
+ */
+export async function populateRealR32SlotsFromGroupResults(
+  supabase: SupabaseClient,
+): Promise<PopulateOutcome> {
+  const loaded = await loadRealStandingsByGroup(supabase);
+  if (loaded.ok === false) return loaded;
+  if (loaded.standings === null) {
+    return { ok: true, written: 0, skipped: loaded.skipped };
   }
 
-  // Upsert by primary key — idempotent re-runs.
+  const writes: { id: string; real_team_id: string }[] = [];
+  for (const letter of GROUP_LETTERS) {
+    const standings = loaded.standings.get(letter) ?? [];
+    const first = standings.find((s) => s.rank === 1);
+    const second = standings.find((s) => s.rank === 2);
+    if (first) writes.push({ id: `r32-winner-${letter}`, real_team_id: first.team_id });
+    if (second) writes.push({ id: `r32-runner-up-${letter}`, real_team_id: second.team_id });
+  }
+
   const { error: upsertErr } = await supabase
     .from("bracket_slots")
     .upsert(writes, { onConflict: "id" });
   if (upsertErr) {
     return { ok: false, reason: `slot upsert: ${upsertErr.message}` };
   }
+  return { ok: true, written: writes.length };
+}
 
+/**
+ * Given FIFA's real qualifying set (the 8 groups whose 3rd-placed team
+ * advanced — admin-supplied, since the final tiebreakers can't be
+ * simulated), assign each qualifying team to its R32 slot via Annex C and
+ * write `bracket_slots.real_team_id` for the 8 "best-3rd-vs-{winner}"
+ * slots. This is the real-side mirror of populateR32Slots: it guarantees
+ * the same FIFA-compliant, no-same-group-rematch placement.
+ *
+ * Throws (via lookupAnnexC) if realQualifyingGroups isn't exactly 8
+ * distinct groups. Idempotent. Bails (skipped) until group stage is
+ * fully finished, since it needs real 3rd-place standings.
+ */
+export async function populateRealBestThirdSlots(
+  supabase: SupabaseClient,
+  realQualifyingGroups: readonly GroupLetter[],
+): Promise<PopulateOutcome> {
+  const assignment = lookupAnnexC(realQualifyingGroups);
+
+  const loaded = await loadRealStandingsByGroup(supabase);
+  if (loaded.ok === false) return loaded;
+  if (loaded.standings === null) {
+    return { ok: true, written: 0, skipped: loaded.skipped };
+  }
+
+  const writes: { id: string; real_team_id: string }[] = [];
+  for (const g of THIRD_PLACE_WINNER_GROUPS) {
+    const assignedGroup = assignment[`1${g}` as WinnerSlot];
+    const standings = loaded.standings.get(assignedGroup) ?? [];
+    const third = standings.find((s) => s.rank === 3);
+    if (third) {
+      writes.push({ id: `r32-best-3rd-vs-${g}`, real_team_id: third.team_id });
+    }
+  }
+
+  const { error: upsertErr } = await supabase
+    .from("bracket_slots")
+    .upsert(writes, { onConflict: "id" });
+  if (upsertErr) {
+    return { ok: false, reason: `slot upsert: ${upsertErr.message}` };
+  }
   return { ok: true, written: writes.length };
 }

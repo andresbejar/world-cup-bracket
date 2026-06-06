@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { TEST_USER_EMAIL } from "./global-setup";
 
 // Delete the e2e test user. ON DELETE CASCADE on the public-side tables
-// (predictions, finalist_picks, predicted_third_place_assignments) takes
+// (predictions, finalist_picks, predicted_qualifying_thirds) takes
 // care of every row the test wrote. Teardown is best-effort — a failure
 // here shouldn't mask a green test run; we log and exit cleanly.
 

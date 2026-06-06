@@ -27,6 +27,8 @@
 .env
 .env*.local
 .env.local
+.env.local.*
+*.env.bak
 !.env.example
 
 # misc
@@ -51,3 +53,6 @@ next-env.d.ts
 # Claude Code local settings (machine-specific, not for commit)
 .claude/settings.local.json
 .gstack/
+
+# prod checkpoint dumps — never commit
+backups/

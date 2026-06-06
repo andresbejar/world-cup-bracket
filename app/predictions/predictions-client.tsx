@@ -11,7 +11,7 @@ import {
 import { MatchCard } from "./match-card";
 import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
-import { ThirdPlaceCluster } from "./third-place-cluster";
+import { ThirdPlaceCluster, type ThirdPlaceRow } from "./third-place-cluster";
 import { PredictedVsRealCard } from "./predicted-vs-real-card";
 import { PodiumBanner } from "./podium-banner";
 import {
@@ -24,15 +24,15 @@ import {
   computeMatchPoints,
   GROUP_LETTERS,
   populateR32Slots,
-  THIRD_PLACE_SLOT_LABELS,
+  THIRD_PLACE_WINNER_GROUPS,
   type ActualMatch,
+  type GroupLetter,
   type GroupStandings,
   type KnockoutMatchPrediction,
   type KnockoutRoundId,
   type MatchPrediction,
   type MatchScore,
   type Team,
-  type ThirdPlacePick,
 } from "@/lib/bracket";
 import type {
   HydratedFinalistPicks,
@@ -41,7 +41,6 @@ import type {
   HydratedPrediction,
   HydratedRound,
   HydratedTeam,
-  HydratedThirdPlacePick,
 } from "@/lib/group-data";
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -52,7 +51,7 @@ interface Props {
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
   initialPredictions: HydratedPrediction[];
-  initialThirdPlacePicks: HydratedThirdPlacePick[];
+  initialQualifyingThirdGroups: string[];
   initialFinalistPicks: HydratedFinalistPicks;
   slotLabelById: Record<string, string>;
   realTeamIdBySlotLabel: Record<string, string>;
@@ -73,7 +72,7 @@ export function PredictionsClient({
   groupMatches,
   knockoutMatches,
   initialPredictions,
-  initialThirdPlacePicks,
+  initialQualifyingThirdGroups,
   initialFinalistPicks,
   slotLabelById,
   realTeamIdBySlotLabel,
@@ -100,16 +99,11 @@ export function PredictionsClient({
     new Map(),
   );
 
-  // Third-place picks: slot_id → predicted team_id. Saved separately via
-  // /api/third-place-assignments (different schema + different RLS check).
-  const [thirdPlacePicks, setThirdPlacePicks] = useState<Map<string, string>>(
-    () => {
-      const m = new Map<string, string>();
-      for (const p of initialThirdPlacePicks) {
-        m.set(p.slot_id, p.predicted_team_id);
-      }
-      return m;
-    },
+  // "Best third-placed teams" qualifying set: the group letters whose
+  // 3rd-placed team the user predicts will advance (≤8). Saved via
+  // /api/third-place-assignments; Annex C derives the R32 opponents.
+  const [qualifyingGroups, setQualifyingGroups] = useState<Set<string>>(
+    () => new Set(initialQualifyingThirdGroups),
   );
   const [thirdPlaceSaveStatus, setThirdPlaceSaveStatus] = useState<
     Map<string, SaveStatus>
@@ -156,20 +150,20 @@ export function PredictionsClient({
     [],
   );
 
-  const flushThirdPlaceSave = useCallback(
-    async (slot_id: string, team_id: string | null) => {
-      setThirdPlaceSaveStatus((s) => new Map(s).set(slot_id, "saving"));
+  const flushQualifyingSave = useCallback(
+    async (group_letter: string, selected: boolean) => {
+      setThirdPlaceSaveStatus((s) => new Map(s).set(group_letter, "saving"));
       try {
         const res = await fetch("/api/third-place-assignments", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slot_id, team_id }),
+          body: JSON.stringify({ group_letter, selected }),
         });
         if (!res.ok) throw new Error(`save failed ${res.status}`);
-        setThirdPlaceSaveStatus((s) => new Map(s).set(slot_id, "saved"));
+        setThirdPlaceSaveStatus((s) => new Map(s).set(group_letter, "saved"));
       } catch (e) {
         console.error("[third-place] save failed", e);
-        setThirdPlaceSaveStatus((s) => new Map(s).set(slot_id, "error"));
+        setThirdPlaceSaveStatus((s) => new Map(s).set(group_letter, "error"));
       }
     },
     [],
@@ -209,24 +203,28 @@ export function PredictionsClient({
     [flushFinalistSave],
   );
 
-  const writeThirdPlacePick = useCallback(
-    (slot_id: string, team_id: string | null) => {
-      setThirdPlacePicks((prev) => {
-        const next = new Map(prev);
-        if (team_id == null) next.delete(slot_id);
-        else next.set(slot_id, team_id);
+  const writeQualifyingGroup = useCallback(
+    (group_letter: string, selected: boolean) => {
+      setQualifyingGroups((prev) => {
+        const next = new Set(prev);
+        if (selected) {
+          if (next.size >= 8 && !next.has(group_letter)) return prev; // ceiling
+          next.add(group_letter);
+        } else {
+          next.delete(group_letter);
+        }
         return next;
       });
-      const key = `third:${slot_id}`;
+      const key = `third:${group_letter}`;
       const existing = pendingTimers.current.get(key);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(() => {
-        flushThirdPlaceSave(slot_id, team_id);
+        flushQualifyingSave(group_letter, selected);
         pendingTimers.current.delete(key);
       }, SAVE_DEBOUNCE_MS);
       pendingTimers.current.set(key, timer);
     },
-    [flushThirdPlaceSave],
+    [flushQualifyingSave],
   );
 
   const writePrediction = useCallback(
@@ -315,43 +313,52 @@ export function PredictionsClient({
     return counts;
   }, [groupMatches]);
 
-  // Resolve the 8 best-3rd slot_labels into the bracket_slot.ids the
-  // user's third-place picks reference. The cluster UI uses these IDs;
-  // the cascade just needs the slot_label → team_id pairs.
-  const bestThirdSlots = useMemo<
-    Array<{ slot_id: string; slot_label: string }>
-  >(() => {
-    const reverse: Record<string, string> = {};
-    for (const [id, label] of Object.entries(slotLabelById)) {
-      reverse[label] = id;
-    }
-    return THIRD_PLACE_SLOT_LABELS.map((label) => ({
-      slot_label: label,
-      slot_id: reverse[label] ?? "",
-    }));
-  }, [slotLabelById]);
-
-  // The 12 teams the user's group predictions ranked 3rd (one per group).
-  const predictedThirds = useMemo<HydratedTeam[]>(() => {
+  // The 12 teams the user's group predictions ranked 3rd, one per group,
+  // sorted by FIFA's first 3 tiebreakers (points → GD → GS, descending).
+  // Display-only ordering for the selector + its "below the cutoff" line.
+  const thirdPlaceRows = useMemo<ThirdPlaceRow[]>(() => {
     const teamById = new Map(groupTeams.map((t) => [t.id, t]));
-    const result: HydratedTeam[] = [];
+    const rows: ThirdPlaceRow[] = [];
     for (const g of standingsByGroup) {
       const third = g.standings.find((s) => s.rank === 3);
       const team = third ? teamById.get(third.team_id) : null;
-      if (team) result.push(team);
+      if (!third || !team) continue;
+      rows.push({
+        group_letter: g.group_letter,
+        team,
+        points: third.points,
+        goal_difference: third.goal_difference,
+        goals_for: third.goals_for,
+      });
     }
-    return result;
+    rows.sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.goal_difference - a.goal_difference ||
+        b.goals_for - a.goals_for,
+    );
+    return rows;
   }, [standingsByGroup, groupTeams]);
 
-  // Convert the cluster's slot_id-keyed picks into the slot_label-keyed
-  // ThirdPlacePick[] shape that populateR32Slots wants. Picks where the
-  // user hasn't chosen a team pass through as team_id: null.
-  const thirdPlacePickList = useMemo<ThirdPlacePick[]>(() => {
-    return bestThirdSlots.map(({ slot_id, slot_label }) => ({
-      slot_label,
-      team_id: thirdPlacePicks.get(slot_id) ?? null,
-    }));
-  }, [bestThirdSlots, thirdPlacePicks]);
+  // The qualifying set as a typed array for populateR32Slots / Annex C.
+  const qualifyingGroupsArray = useMemo<GroupLetter[]>(
+    () => [...qualifyingGroups] as GroupLetter[],
+    [qualifyingGroups],
+  );
+
+  // FIFA's real 8 qualifying 3rd-placed team_ids, read off the settled
+  // "best-3rd-vs-{winner}" slots. Null until all 8 are populated — drives
+  // the selector's results mode + correctness scoring.
+  const realQualifyingThirdTeamIds = useMemo<Set<string> | null>(() => {
+    const ids: string[] = [];
+    for (const g of THIRD_PLACE_WINNER_GROUPS) {
+      const id = realTeamIdBySlotLabel[`best-3rd-vs-${g}`];
+      if (id) ids.push(id);
+    }
+    return ids.length === THIRD_PLACE_WINNER_GROUPS.length
+      ? new Set(ids)
+      : null;
+  }, [realTeamIdBySlotLabel]);
 
   // Track whether every group-stage match has been predicted. The
   // third-place cluster is locked until this is true so the user's
@@ -361,7 +368,8 @@ export function PredictionsClient({
     return groupMatches.every((m) => predictions.has(m.id));
   }, [groupMatches, predictions]);
 
-  // R32 → Final cascade. Best-3rd picks now feed in via thirdPlacePickList.
+  // R32 → Final cascade. The qualifying set feeds Annex C inside
+  // populateR32Slots to place the 8 third-placed teams.
   //
   // Two parallel cascades are built here:
   //   - predictedSlotMap: pure prediction tree. Used to compute the
@@ -392,18 +400,18 @@ export function PredictionsClient({
   const predictedSlotMap = useMemo<Map<string, string | null>>(() => {
     let r32Slots;
     try {
-      r32Slots = populateR32Slots(standingsByGroup, thirdPlacePickList);
+      r32Slots = populateR32Slots(standingsByGroup, qualifyingGroupsArray);
     } catch (e) {
       console.error("[predictions] populateR32Slots failed:", e);
       r32Slots = populateR32Slots(standingsByGroup, []);
     }
     return computeKnockoutCascade(r32Slots, knockoutPreds);
-  }, [standingsByGroup, thirdPlacePickList, knockoutPreds]);
+  }, [standingsByGroup, qualifyingGroupsArray, knockoutPreds]);
 
   const slotMap = useMemo<Map<string, string | null>>(() => {
     let r32Slots;
     try {
-      r32Slots = populateR32Slots(standingsByGroup, thirdPlacePickList);
+      r32Slots = populateR32Slots(standingsByGroup, qualifyingGroupsArray);
     } catch (e) {
       console.error("[predictions] populateR32Slots failed:", e);
       r32Slots = populateR32Slots(standingsByGroup, []);
@@ -418,7 +426,7 @@ export function PredictionsClient({
     return computeKnockoutCascade(realOverridden, knockoutPreds);
   }, [
     standingsByGroup,
-    thirdPlacePickList,
+    qualifyingGroupsArray,
     knockoutPreds,
     realTeamIdBySlotLabel,
   ]);
@@ -594,15 +602,12 @@ export function PredictionsClient({
               <div className="mt-6">
                 {activeRound?.stage === "r32" ? (
                   <ThirdPlaceCluster
-                    slots={bestThirdSlots}
-                    predictedThirds={predictedThirds}
-                    picks={thirdPlacePicks}
+                    rows={thirdPlaceRows}
+                    selected={qualifyingGroups}
                     saveStatus={thirdPlaceSaveStatus}
                     groupPredictionsComplete={groupPredictionsComplete}
-                    realTeamIdBySlotLabel={realTeamIdBySlotLabel}
-                    teamCodeById={teamCodeById}
-                    teamNameById={teamNameById}
-                    onChange={writeThirdPlacePick}
+                    realQualifyingThirdTeamIds={realQualifyingThirdTeamIds}
+                    onToggle={writeQualifyingGroup}
                   />
                 ) : null}
                 <div className="space-y-2">

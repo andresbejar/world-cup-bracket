@@ -128,22 +128,10 @@ export async function listKnockoutMatches(): Promise<KnockoutMatchRow[]> {
 }
 
 /**
- * Returns the 8 best-3rd bracket_slot ids in slot_label order
- * (best-3rd-1 → best-3rd-8). Specs use this to fill the third-place
- * cluster via /api/third-place-assignments without scraping the DOM.
+ * The 8 group letters a spec selects as the "best third-placed teams"
+ * qualifying set. Posted to /api/third-place-assignments as
+ * { group_letter, selected: true }; Annex C derives the R32 opponents.
  */
-export async function listBestThirdSlots(): Promise<
-  { slot_id: string; slot_label: string }[]
-> {
-  const admin = adminClient();
-  const { data, error } = await admin
-    .from("bracket_slots")
-    .select("id, slot_label")
-    .like("slot_label", "best-3rd-%")
-    .order("slot_label");
-  if (error) throw error;
-  return (data ?? []).map((s) => ({
-    slot_id: s.id as string,
-    slot_label: s.slot_label as string,
-  }));
-}
+export const QUALIFYING_THIRD_GROUPS = [
+  "A", "B", "C", "D", "E", "F", "G", "H",
+] as const;

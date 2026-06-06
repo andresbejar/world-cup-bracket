@@ -4,14 +4,20 @@ import { requireActiveUser } from "@/lib/auth-guard";
 import { checkRoundLock } from "@/lib/lock-check";
 
 // POST /api/third-place-assignments
-// Body: { slot_id: string; team_id: string | null }
+// Body: { group_letter: "A".."L"; selected: boolean }
 //
-// team_id !== null → upsert on (user_id, slot_id)
-// team_id === null → delete the row (user is clearing their pick)
+// Toggles one group in the user's "best third-placed teams" qualifying
+// set. The user picks WHICH 8 of the 12 groups' third-placed teams
+// advance; FIFA's Annex C (lib/annex-c.ts) then deterministically decides
+// each one's R32 opponent. This replaces the old per-slot assignment that
+// could produce illegal same-group matchups.
 //
-// Third-place picks lock at R32's deadline (4hr before R32 starts) —
-// after that, FIFA has settled which group's third-place team lands
-// where and the bet is decided.
+//   selected: true  → add the group (rejected with 409 if already at 8)
+//   selected: false → remove the group
+//
+// Picks lock at R32's deadline (4hr before R32 starts).
+const MAX_QUALIFIERS = 8;
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const guard = await requireActiveUser(supabase);
@@ -31,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  // Third-place picks are gated by the R32 round's lock state.
+  // Gated by the R32 round's lock state.
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select("locked_at, deadline_at")
@@ -61,48 +67,53 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (parsed.team_id == null) {
+  if (!parsed.selected) {
     const { error } = await supabase
-      .from("predicted_third_place_assignments")
+      .from("predicted_qualifying_thirds")
       .delete()
       .eq("user_id", user.id)
-      .eq("slot_id", parsed.slot_id);
+      .eq("group_letter", parsed.group_letter);
     if (error) {
       console.error("[api/third-place-assignments] delete failed:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, cleared: true });
+    return NextResponse.json({ ok: true, selected: false });
+  }
+
+  // Enforce the "exactly 8" ceiling: reject an add that would exceed it.
+  // (UI prevents this; this is the server-side backstop.)
+  const { data: existing, error: countErr } = await supabase
+    .from("predicted_qualifying_thirds")
+    .select("group_letter")
+    .eq("user_id", user.id);
+  if (countErr) {
+    console.error("[api/third-place-assignments] count failed:", countErr);
+    return NextResponse.json({ error: countErr.message }, { status: 500 });
+  }
+  const current = new Set((existing ?? []).map((r) => r.group_letter as string));
+  if (!current.has(parsed.group_letter) && current.size >= MAX_QUALIFIERS) {
+    return NextResponse.json(
+      { error: `at most ${MAX_QUALIFIERS} groups can qualify — deselect one first` },
+      { status: 409 },
+    );
   }
 
   const { error } = await supabase
-    .from("predicted_third_place_assignments")
+    .from("predicted_qualifying_thirds")
     .upsert(
-      {
-        user_id: user.id,
-        slot_id: parsed.slot_id,
-        predicted_team_id: parsed.team_id,
-      },
-      { onConflict: "user_id,slot_id" },
+      { user_id: user.id, group_letter: parsed.group_letter },
+      { onConflict: "user_id,group_letter", ignoreDuplicates: true },
     );
   if (error) {
-    // Hits the (user_id, predicted_team_id) unique constraint when a
-    // client tries to assign the same team to two slots — UI prevents
-    // this, but we surface a clean 409 if it sneaks through.
-    if (error.code === "23505") {
-      return NextResponse.json(
-        { error: "team already picked for another slot" },
-        { status: 409 },
-      );
-    }
     console.error("[api/third-place-assignments] upsert failed:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, selected: true });
 }
 
 interface ParsedBody {
-  slot_id: string;
-  team_id: string | null;
+  group_letter: string;
+  selected: boolean;
 }
 
 function parseBody(raw: unknown): ParsedBody | { error: string } {
@@ -110,13 +121,12 @@ function parseBody(raw: unknown): ParsedBody | { error: string } {
     return { error: "expected object body" };
   }
   const r = raw as Record<string, unknown>;
-  const slot_id = r.slot_id;
-  if (typeof slot_id !== "string" || slot_id.length === 0) {
-    return { error: "slot_id required" };
+  const group_letter = r.group_letter;
+  if (typeof group_letter !== "string" || !/^[A-L]$/.test(group_letter)) {
+    return { error: "group_letter must be a single letter A–L" };
   }
-  const team_id = r.team_id;
-  if (team_id !== null && (typeof team_id !== "string" || team_id.length === 0)) {
-    return { error: "team_id must be string or null" };
+  if (typeof r.selected !== "boolean") {
+    return { error: "selected must be a boolean" };
   }
-  return { slot_id, team_id: (team_id as string | null) ?? null };
+  return { group_letter, selected: r.selected };
 }
