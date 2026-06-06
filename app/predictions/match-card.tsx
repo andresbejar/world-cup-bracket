@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { ScoreInput } from "./score-input";
+import { shortDateTime } from "@/lib/match-display";
 import type { HydratedMatch } from "@/lib/group-data";
 
 // Horizontal match card per DESIGN.md § Component Vocabulary.
@@ -141,16 +142,4 @@ function SaveStatusLabel({
       retry
     </span>
   );
-}
-
-function shortDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d
-    .toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    })
-    .replace(/ /g, " ");
 }

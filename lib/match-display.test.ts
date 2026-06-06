@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hasRealResult } from "./match-display";
+import { hasRealResult, shortDateTime } from "./match-display";
 
 // Kickoff fixed at noon UTC on FIFA 2026 opening day. "now" is injected so
 // every branch is deterministic.
@@ -43,5 +43,31 @@ describe("hasRealResult", () => {
     expect(
       hasRealResult({ status: "cancelled", scheduled_at: KICKOFF }, KICKOFF_MS + 1),
     ).toBe(false);
+  });
+});
+
+describe("shortDateTime", () => {
+  // R32 match 73: 19:00 UTC kickoff. Pinning the zone makes the conversion
+  // and the appended zone label deterministic regardless of CI's local zone.
+  const R32_M1 = "2026-06-28T19:00:00Z";
+
+  it("renders the kickoff in the given zone with a zone-name label", () => {
+    expect(shortDateTime(R32_M1, "America/Los_Angeles")).toBe("Jun 28, 12:00 PM PDT");
+  });
+
+  it("converts the same instant correctly for a different zone", () => {
+    expect(shortDateTime(R32_M1, "UTC")).toBe("Jun 28, 7:00 PM UTC");
+  });
+
+  it("always appends a timezone label so times are never ambiguous", () => {
+    // No explicit zone → runtime-local; the key guarantee is the label exists.
+    expect(shortDateTime(R32_M1)).toMatch(/[A-Z]{2,5}$/);
+  });
+
+  it("normalizes the narrow no-break space before AM/PM to a regular space", () => {
+    // toLocaleString emits U+202F before AM/PM; output must use U+0020 instead.
+    const out = shortDateTime(R32_M1, "UTC");
+    expect(out).not.toContain(" ");
+    expect(out).toContain(" PM");
   });
 });
