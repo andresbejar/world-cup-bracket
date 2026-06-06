@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { clearMatchScoring } from "../lib/scoring-runtime";
 
 // Shared e2e utilities. Specs that need to inspect seed data (match
 // IDs, slot labels, team mappings) go through here instead of duplicating
@@ -15,6 +16,93 @@ export function adminClient(): SupabaseClient {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+export interface StrandedReset {
+  matchesReset: string[];
+  scoringCleared: number;
+  /** Set when the reset was refused; the rest is a no-op. */
+  skipped?: "tournament-started";
+}
+
+/**
+ * Self-heal *impossible* match results: a match whose scheduled kickoff is
+ * still in the future, yet looks played (`finished`/`in_progress`, or carries
+ * a score / finished_at). Pre-tournament that can only be stranded data —
+ * almost always from an e2e run (e.g. scoring-loop.spec) that was interrupted
+ * before its afterAll restore ran against the shared DB.
+ *
+ * For each such match we clear the prediction scoring it stamped (so no user
+ * is left with phantom points) and reset the row to `scheduled` with null
+ * scores.
+ *
+ * SAFETY GATE: this only runs *before the tournament starts* (no match kickoff
+ * has passed yet). Once play begins, a future-dated row that looks played is no
+ * longer necessarily impossible — a match can be played-then-rescheduled, and
+ * blindly resetting it would null real scores and recompute leaderboards down.
+ * So past kickoff this refuses and no-ops; e2e must move off the shared prod DB
+ * before then (tracked follow-up). `cancelled` is left alone — it's a
+ * legitimate terminal state, not phantom "played" data.
+ *
+ * Used by global-setup (run-start self-heal) and the scripts/reset-match-results.ts
+ * operator scrub.
+ */
+export async function resetStrandedMatchResults(
+  admin: SupabaseClient,
+): Promise<StrandedReset> {
+  const now = Date.now();
+
+  // Gate: refuse once any match has kicked off (tournament is live).
+  const { data: earliest, error: earliestErr } = await admin
+    .from("matches")
+    .select("scheduled_at")
+    .order("scheduled_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (earliestErr) throw earliestErr;
+  if (earliest && new Date(earliest.scheduled_at).getTime() <= now) {
+    return { matchesReset: [], scoringCleared: 0, skipped: "tournament-started" };
+  }
+
+  const nowIso = new Date(now).toISOString();
+  const { data: stranded, error } = await admin
+    .from("matches")
+    .select("id, status, home_score, away_score, finished_at, scheduled_at")
+    .gt("scheduled_at", nowIso)
+    .or("status.eq.finished,status.eq.in_progress,home_score.not.is.null,away_score.not.is.null,finished_at.not.is.null");
+  if (error) throw error;
+  if (!stranded || stranded.length === 0) {
+    return { matchesReset: [], scoringCleared: 0 };
+  }
+
+  let scoringCleared = 0;
+  const matchesReset: string[] = [];
+  for (const m of stranded) {
+    const id = m.id as string;
+    // Clear scoring BEFORE resetting status — scoreMatch/clearMatchScoring
+    // short-circuit on non-terminal statuses, so once status flips back to
+    // `scheduled` the stranded points_awarded can no longer be undone.
+    const cleared = await clearMatchScoring(admin, id);
+    if (cleared.ok === false) {
+      throw new Error(`resetStrandedMatchResults: clearMatchScoring ${id}: ${cleared.reason}`);
+    }
+    scoringCleared += cleared.cleared;
+
+    const { error: upErr } = await admin
+      .from("matches")
+      .update({
+        status: "scheduled",
+        home_score: null,
+        away_score: null,
+        finished_at: null,
+      })
+      .eq("id", id);
+    if (upErr) {
+      throw new Error(`resetStrandedMatchResults: reset ${id}: ${upErr.message}`);
+    }
+    matchesReset.push(id);
+  }
+  return { matchesReset, scoringCleared };
 }
 
 export interface GroupMatchRow {

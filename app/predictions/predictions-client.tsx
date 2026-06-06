@@ -34,6 +34,7 @@ import {
   type MatchScore,
   type Team,
 } from "@/lib/bracket";
+import { hasRealResult } from "@/lib/match-display";
 import type {
   HydratedFinalistPicks,
   HydratedKnockoutMatch,
@@ -260,7 +261,7 @@ export function PredictionsClient({
       const bucket = scoresByGroup.get(m.home.group_letter);
       if (!bucket) continue;
       const useReal =
-        m.status === "finished" &&
+        hasRealResult(m) &&
         m.home_score != null &&
         m.away_score != null;
       if (useReal) {
@@ -308,7 +309,7 @@ export function PredictionsClient({
     const counts: Record<string, number> = {};
     for (const letter of GROUP_LETTERS) counts[letter] = 0;
     for (const m of groupMatches) {
-      if (m.status === "finished") counts[m.home.group_letter] += 1;
+      if (hasRealResult(m)) counts[m.home.group_letter] += 1;
     }
     return counts;
   }, [groupMatches]);
@@ -613,7 +614,7 @@ export function PredictionsClient({
                 <div className="space-y-2">
                   {activeKnockoutMatches.map((match) => {
                     const state = predictions.get(match.id);
-                    if (match.status === "finished") {
+                    if (hasRealResult(match)) {
                       const homeCode =
                         teamCodeAtLabel(match.home_slot_label) ?? "—";
                       const awayCode =
@@ -713,7 +714,7 @@ export function PredictionsClient({
                     <div className="space-y-2">
                       {items.map((match, idx) => {
                         const score = predictions.get(match.id);
-                        if (match.status === "finished") {
+                        if (hasRealResult(match)) {
                           return (
                             <PredictedVsRealCard
                               key={match.id}
