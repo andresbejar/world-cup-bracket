@@ -137,7 +137,7 @@ For Next.js: use `next/font/google` for Instrument Serif and JetBrains Mono. Loa
 - **Leaderboard:** centered table, max-width ~840px. Avatars + monospace ranks + tabular points. Single-column on mobile; row reflows the username + counts + total points without truncating the username (`truncate` on the name container, `shrink-0` on the points).
 - **Sign-in / first-run:** centered card, generous whitespace, single CTA. Editorial. Headline wraps to two lines under 480px (intentional).
 - **Profile:** form layout, label-above-input, generous spacing.
-- **Top bar (global nav):** wordmark + two-item pill nav (Predictions / Leaderboard) + user pill + sign-out. Uses `flex-wrap` so the nav pills drop to their own row on mobile while the user identity row stays on top.
+- **Top bar (global nav):** wordmark + three-item pill nav (Predictions / Leaderboard / How to Play) + user pill + sign-out. Uses `flex-wrap` so the nav drops to its own row on mobile while the user identity row stays on top; the nav strip itself scrolls horizontally (`overflow-x-auto`) so extra pills fit without wrapping.
 
 ### Container
 
