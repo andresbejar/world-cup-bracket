@@ -2,13 +2,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { SignOutButton } from "@/app/predictions/sign-out-button";
 
-// Global top bar — shared by /predictions and /leaderboard. The two-item
-// pill nav (Predictions / Leaderboard) keeps the active page obvious
-// via accent fill + aria-current, matches the round-selector pill family,
-// and is intentionally visible on mobile (the previous "012 PTS" entry
-// point was hidden below sm:, which made the leaderboard undiscoverable).
+// Global top bar — shared across the authenticated pages. The three-item
+// pill nav (Predictions / Leaderboard / How to Play) keeps the active page
+// obvious via accent fill + aria-current, matches the round-selector pill
+// family, and is intentionally visible on mobile (the previous "012 PTS"
+// entry point was hidden below sm:, which made the leaderboard
+// undiscoverable). The nav strip scrolls horizontally so extra pills fit.
 
-type ActivePage = "predictions" | "leaderboard";
+type ActivePage = "predictions" | "leaderboard" | "how-to-play";
 
 interface Props {
   active: ActivePage;
@@ -21,6 +22,7 @@ interface Props {
 const NAV: { id: ActivePage; label: string; href: string }[] = [
   { id: "predictions", label: "Predictions", href: "/predictions" },
   { id: "leaderboard", label: "Leaderboard", href: "/leaderboard" },
+  { id: "how-to-play", label: "How to Play", href: "/how-to-play" },
 ];
 
 export function TopBar({ active, username, avatar, points, email }: Props) {
