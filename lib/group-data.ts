@@ -61,6 +61,12 @@ export interface HydratedKnockoutMatch {
   home_score: number | null;
   away_score: number | null;
   status: "scheduled" | "in_progress" | "finished" | "cancelled";
+  /**
+   * The slot that advanced (== home_slot_id or away_slot_id). Single
+   * source of truth for the knockout outcome, incl. penalty shootouts.
+   * Null until the match settles. Set by the polling cron.
+   */
+  winning_slot_id: string | null;
 }
 
 export interface HydratedPrediction {
@@ -92,8 +98,9 @@ export interface PredictionWorkspaceData {
    * bracket_slot.slot_label → real_team_id, for every slot whose
    * `real_team_id` has been populated. Group stage settling writes the
    * 24 group-driven R32 inputs (winner-A..L, runner-up-A..L); admins
-   * land the 8 best-3rd-N slots out-of-band. Downstream knockout slot
-   * labels (`r32-match-N-winner`, etc.) aren't written by the cron yet.
+   * land the 8 best-3rd-N slots out-of-band. As knockout matches finish,
+   * the cron advances winners into the downstream slot labels
+   * (`r32-match-N-winner`, etc.) via populateRealKnockoutSlots.
    */
   realTeamIdBySlotLabel: Record<string, string>;
 }
@@ -125,7 +132,7 @@ export async function loadPredictionWorkspace(
     supabase
       .from("matches")
       .select(
-        "id, round_id, home_slot_id, away_slot_id, scheduled_at, home_score, away_score, status",
+        "id, round_id, home_slot_id, away_slot_id, scheduled_at, home_score, away_score, status, winning_slot_id",
       )
       .order("scheduled_at", { ascending: true }),
     supabase
@@ -216,6 +223,7 @@ export async function loadPredictionWorkspace(
         home_score: m.home_score,
         away_score: m.away_score,
         status: m.status,
+        winning_slot_id: m.winning_slot_id,
       });
     }
   }

@@ -14,8 +14,11 @@ import {
 import {
   computeThirdPlacePlacementPoints,
   computeGroupStandings,
+  computeFinalistPoints,
   THIRD_PLACE_SLOT_LABELS,
   type ActualMatch,
+  type FinalStandings,
+  type FinalistPicks,
   type MatchScore,
   type Team,
 } from "./bracket";
@@ -49,7 +52,7 @@ export async function scoreMatch(
   const { data: matchRow, error: matchErr } = await supabase
     .from("matches")
     .select(
-      "id, status, home_slot_id, away_slot_id, home_score, away_score, finished_at, rounds(stage)",
+      "id, status, home_slot_id, away_slot_id, home_score, away_score, winning_slot_id, finished_at, rounds(stage)",
     )
     .eq("id", match_id)
     .maybeSingle();
@@ -71,21 +74,12 @@ export async function scoreMatch(
     return { ok: true, scored: 0, skipped: `status=${status}` };
   }
 
-  // Resolve the winning slot for knockouts from the score. The polling
-  // job (APT-28) will land penalty winners on a dedicated column; for
-  // now, tied 90+ET knockouts leave winning_slot_id null and the pure
-  // scorer returns null for those predictions — re-runs once the
-  // shootout result lands are safe.
-  let winning_slot_id: string | null = null;
-  if (stage === "knockout" && status === "finished") {
-    const h = matchRow.home_score as number | null;
-    const a = matchRow.away_score as number | null;
-    if (h != null && a != null) {
-      if (h > a) winning_slot_id = matchRow.home_slot_id as string;
-      else if (a > h) winning_slot_id = matchRow.away_slot_id as string;
-    }
-  }
-
+  // The winning slot is the single source of truth for knockout
+  // outcomes — written by the polling job from api-football (regulation
+  // winner OR penalty-shootout winner; see route.ts resolveWinningSlot)
+  // or by an operator for awarded walkovers. A still-null knockout winner
+  // (shootout result not yet ingested) makes the pure scorer return null
+  // for those predictions; re-running once it lands is safe.
   const actualMatch: ActualMatch = {
     status,
     stage,
@@ -93,7 +87,10 @@ export async function scoreMatch(
     away_slot_id: matchRow.away_slot_id as string,
     home_score: matchRow.home_score as number | null,
     away_score: matchRow.away_score as number | null,
-    winning_slot_id,
+    winning_slot_id:
+      stage === "knockout"
+        ? (matchRow.winning_slot_id as string | null)
+        : null,
   };
 
   const { data: preds, error: predsErr } = await supabase
@@ -150,6 +147,126 @@ export async function scoreMatch(
   }
 
   return { ok: true, scored: plan.predictionUpdates.length };
+}
+
+export type ScoreFinalistsOutcome =
+  | { ok: true; scored: number; skipped?: string }
+  | { ok: false; reason: string };
+
+/** Minimal match shape needed to read off the podium. */
+export interface PodiumMatchRow {
+  status: string;
+  home_slot_id: string;
+  away_slot_id: string;
+  winning_slot_id: string | null;
+}
+
+/**
+ * Pure: derive reality's podium from the two terminal knockout matches and
+ * the real occupants of their slots. Champion/runner-up come from the
+ * Final's winning/losing slot; 3rd from the third-place match's winning
+ * slot. Any position the match hasn't settled (unfinished, or a shootout
+ * winner not yet ingested) resolves to null — computeFinalistPoints
+ * tolerates nulls, so a partly-settled podium scores only what's known.
+ */
+export function deriveFinalStandings(
+  final: PodiumMatchRow | null,
+  thirdPlace: PodiumMatchRow | null,
+  teamBySlot: Map<string, string>,
+): FinalStandings {
+  let champion: string | null = null;
+  let runnerUp: string | null = null;
+  if (final && final.status === "finished" && final.winning_slot_id) {
+    const winSlot = final.winning_slot_id;
+    const loseSlot =
+      winSlot === final.home_slot_id ? final.away_slot_id : final.home_slot_id;
+    champion = teamBySlot.get(winSlot) ?? null;
+    runnerUp = teamBySlot.get(loseSlot) ?? null;
+  }
+  const third =
+    thirdPlace && thirdPlace.status === "finished" && thirdPlace.winning_slot_id
+      ? teamBySlot.get(thirdPlace.winning_slot_id) ?? null
+      : null;
+  return {
+    first_place_team_id: champion,
+    second_place_team_id: runnerUp,
+    third_place_team_id: third,
+  };
+}
+
+/**
+ * Score the finalist podium side-bet (Champion 5 / Runner-up 3 / 3rd 1).
+ *
+ * Builds reality's podium from the two terminal knockout matches:
+ *   - champion   = real team in the Final's winning slot
+ *   - runner-up  = real team in the Final's losing slot
+ *   - third      = real team in the third-place match's winning slot
+ * Those slots are filled by populateRealKnockoutSlots, so run this AFTER
+ * advancement. Any position is null until its match has settled (incl. a
+ * penalty winner landing); computeFinalistPoints tolerates nulls, so a
+ * partly-settled podium (Final done, 3rd-place not) scores 1st/2nd only.
+ *
+ * Idempotent (SET semantics on points_awarded) and safe to re-run.
+ */
+export async function scoreFinalists(
+  supabase: SupabaseClient,
+): Promise<ScoreFinalistsOutcome> {
+  const { data: matches, error: matchErr } = await supabase
+    .from("matches")
+    .select("id, status, home_slot_id, away_slot_id, winning_slot_id")
+    .in("id", ["m-final", "m-third-place"]);
+  if (matchErr) return { ok: false, reason: `finalist matches: ${matchErr.message}` };
+
+  const final = (matches?.find((m) => m.id === "m-final") ?? null) as PodiumMatchRow | null;
+  const thirdPlace = (matches?.find((m) => m.id === "m-third-place") ?? null) as PodiumMatchRow | null;
+  const finalDone = final?.status === "finished" && final?.winning_slot_id != null;
+  const thirdDone = thirdPlace?.status === "finished" && thirdPlace?.winning_slot_id != null;
+  if (!finalDone && !thirdDone) {
+    return { ok: true, scored: 0, skipped: "podium not settled" };
+  }
+
+  // Resolve the slots we care about to their real occupants.
+  const slotIds = new Set<string>();
+  if (final) {
+    slotIds.add(final.home_slot_id);
+    slotIds.add(final.away_slot_id);
+  }
+  if (thirdPlace?.winning_slot_id) slotIds.add(thirdPlace.winning_slot_id);
+  const { data: slots, error: slotErr } = await supabase
+    .from("bracket_slots")
+    .select("id, real_team_id")
+    .in("id", Array.from(slotIds));
+  if (slotErr) return { ok: false, reason: `finalist slots: ${slotErr.message}` };
+  const teamBySlot = new Map<string, string>();
+  for (const s of slots ?? []) {
+    if (s.real_team_id) teamBySlot.set(s.id as string, s.real_team_id as string);
+  }
+
+  const standings = deriveFinalStandings(final, thirdPlace, teamBySlot);
+
+  const { data: picks, error: picksErr } = await supabase
+    .from("finalist_picks")
+    .select("user_id, first_place_team_id, second_place_team_id, third_place_team_id");
+  if (picksErr) return { ok: false, reason: `finalist picks: ${picksErr.message}` };
+  if (!picks || picks.length === 0) return { ok: true, scored: 0, skipped: "no finalist picks" };
+
+  let scored = 0;
+  for (const p of picks) {
+    const points = computeFinalistPoints(p as unknown as FinalistPicks, standings);
+    const { error: updErr } = await supabase
+      .from("finalist_picks")
+      .update({ points_awarded: points })
+      .eq("user_id", p.user_id as string);
+    if (updErr) {
+      return { ok: false, reason: `finalist update ${p.user_id}: ${updErr.message}` };
+    }
+    const total = await recomputeUserTotal(supabase, p.user_id as string);
+    if (total.ok === false) {
+      return { ok: false, reason: `recompute ${p.user_id}: ${total.reason}` };
+    }
+    scored += 1;
+  }
+  return { ok: true, scored };
 }
 
 /**
