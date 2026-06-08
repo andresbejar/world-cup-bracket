@@ -6,6 +6,7 @@ import {
   populateRealR32SlotsFromGroupResults,
   populateRealKnockoutSlots,
 } from "@/lib/reality";
+import { applyKnockoutBackfill } from "@/lib/knockout-backfill";
 
 // POST /api/cron/poll-results
 //
@@ -13,6 +14,8 @@ import {
 // Authorization: Bearer <CRON_SECRET> required; non-cron callers get 401.
 //
 // Lifecycle:
+//   0. Backfill knockout fixture ids as api-sports publishes them
+//      (knockouts are seeded with a null fixture id until then)
 //   1. Pull every fixture from api-football
 //   2. Upsert each match's status + canonical 90+ET score + winning
 //      slot id when a knockout has resolved (regulation winner OR
@@ -47,6 +50,14 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
+
+  // 0. Backfill knockout fixture ids. The seed leaves them null (api-sports
+  // hadn't published the 2026 knockout bracket); as it publishes — possibly
+  // incrementally, even before the group stage fully clears — link each
+  // published fixture to our match so the steps below ingest/score it.
+  // Runs first so freshly-linked knockouts are picked up the same tick.
+  // Idempotent; soft-skips on fetch failure.
+  const backfill = await applyKnockoutBackfill(supabase, apiHost, apiKey);
 
   // 1. Pull fresh fixtures from api-football. Soft skip on rate limit / 5xx.
   const fixtures = await fetchFixtures({ host: apiHost, key: apiKey });
@@ -157,6 +168,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    backfill,
     upserted,
     scored,
     newly_finished: newlyFinished.length,
