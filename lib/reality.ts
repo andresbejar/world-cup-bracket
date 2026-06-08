@@ -21,12 +21,18 @@ import {
   type Team,
 } from "./bracket";
 import { lookupAnnexC, type WinnerSlot } from "./annex-c";
+import { ALL_KNOCKOUT_MATCHES } from "./bracket-structure";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PopulateOutcome =
   | { ok: true; written: number; skipped?: undefined }
   | { ok: true; written: 0; skipped: string }
   | { ok: false; reason: string };
+
+// bracket_slots.round_id and slot_label are NOT NULL, so every upsert must
+// carry them — onConflict still attempts the INSERT branch, which would
+// otherwise fail the NOT NULL constraint even when the row already exists.
+type SlotWrite = { id: string; round_id: string; slot_label: string; real_team_id: string };
 
 /**
  * Compute real group standings for all 12 groups from finished group
@@ -128,13 +134,25 @@ export async function populateRealR32SlotsFromGroupResults(
     return { ok: true, written: 0, skipped: loaded.skipped };
   }
 
-  const writes: { id: string; real_team_id: string }[] = [];
+  const writes: SlotWrite[] = [];
   for (const letter of GROUP_LETTERS) {
     const standings = loaded.standings.get(letter) ?? [];
     const first = standings.find((s) => s.rank === 1);
     const second = standings.find((s) => s.rank === 2);
-    if (first) writes.push({ id: `r32-winner-${letter}`, real_team_id: first.team_id });
-    if (second) writes.push({ id: `r32-runner-up-${letter}`, real_team_id: second.team_id });
+    if (first)
+      writes.push({
+        id: `r32-winner-${letter}`,
+        round_id: "r32",
+        slot_label: `winner-${letter}`,
+        real_team_id: first.team_id,
+      });
+    if (second)
+      writes.push({
+        id: `r32-runner-up-${letter}`,
+        round_id: "r32",
+        slot_label: `runner-up-${letter}`,
+        real_team_id: second.team_id,
+      });
   }
 
   const { error: upsertErr } = await supabase
@@ -144,6 +162,160 @@ export async function populateRealR32SlotsFromGroupResults(
     return { ok: false, reason: `slot upsert: ${upsertErr.message}` };
   }
   return { ok: true, written: writes.length };
+}
+
+// Knockout rounds whose winners (and, for SF, losers) advance into a
+// downstream slot. r32→r16→qf→sf must run in this order so each round's
+// writes feed the next round's inputs within a single pass. The final and
+// third-place matches are terminal — they have no downstream slot; their
+// results feed finalist scoring (scoreFinalists) instead.
+const KNOCKOUT_ADVANCING_ROUNDS = ["r32", "r16", "qf", "sf"] as const;
+
+/**
+ * Map each producer slot label (the "{round}-match-{i}-winner" a match
+ * produces, plus the SF "{sf}-match-{i}-loser") to the downstream
+ * bracket_slot id that holds it. Derived from the feeding tree in
+ * bracket-structure.ts so it stays correct if the tree is edited: a
+ * downstream match's home/away slot label IS the producer label, and the
+ * slot id is `${downstream_round}-${label}` (the seed's convention).
+ *
+ * Includes the R32 input labels (winner-A, etc.) too — harmless, since
+ * those are produced by group results and never looked up here.
+ */
+function buildDownstreamSlotByProducerLabel(): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const km of ALL_KNOCKOUT_MATCHES) {
+    m.set(km.home_slot_label, `${km.round_id}-${km.home_slot_label}`);
+    m.set(km.away_slot_label, `${km.round_id}-${km.away_slot_label}`);
+  }
+  return m;
+}
+
+/** Minimal knockout match shape needed to advance real teams. */
+export interface KnockoutMatchRow {
+  id: string; // DB id, e.g. "m-r32-1"
+  round_id: string;
+  home_slot_id: string;
+  away_slot_id: string;
+  status: string;
+  winning_slot_id: string | null;
+}
+
+/**
+ * Pure core of knockout advancement. Given the knockout match rows and the
+ * current real occupant of every slot, return the set of downstream slot
+ * writes ({slot id → real_team_id}) implied by the finished matches.
+ *
+ * For each finished match with a winning_slot_id, the team in the winning
+ * slot advances into the downstream slot it feeds; for semi-finals, the
+ * losing team also advances into its third-place-match slot. Processes
+ * r32 → r16 → qf → sf in order, threading writes through a working copy of
+ * the slot map so a round's advancement is visible to the next round in
+ * the same pass. Matches whose winning input slot isn't populated yet are
+ * skipped (never written as null), so partial brackets are safe and
+ * re-running is deterministic.
+ */
+export function computeKnockoutAdvancement(
+  matches: KnockoutMatchRow[],
+  initialSlotRealTeam: Map<string, string>,
+): Map<string, string> {
+  const slotRealTeam = new Map(initialSlotRealTeam);
+  const matchByDbId = new Map<string, KnockoutMatchRow>();
+  for (const m of matches) matchByDbId.set(m.id, m);
+
+  const downstreamByLabel = buildDownstreamSlotByProducerLabel();
+  const writes = new Map<string, string>();
+
+  const advance = (slotId: string, teamId: string) => {
+    slotRealTeam.set(slotId, teamId);
+    writes.set(slotId, teamId);
+  };
+
+  for (const round of KNOCKOUT_ADVANCING_ROUNDS) {
+    const roundMatches = ALL_KNOCKOUT_MATCHES.filter((km) => km.round_id === round);
+    for (const km of roundMatches) {
+      const db = matchByDbId.get(`m-${km.id}`);
+      if (!db || db.status !== "finished") continue;
+      const winningSlot = db.winning_slot_id;
+      if (!winningSlot) continue; // tie not yet settled by a shootout
+
+      // Winner → downstream slot.
+      const winnerTeam = slotRealTeam.get(winningSlot);
+      const winnerLabel = `${km.round_id}-match-${km.match_index}-winner`;
+      const winnerDest = downstreamByLabel.get(winnerLabel);
+      if (winnerTeam && winnerDest) advance(winnerDest, winnerTeam);
+
+      // SF only: loser → third-place-match slot.
+      if (round === "sf") {
+        const loserSlot =
+          winningSlot === db.home_slot_id ? db.away_slot_id : db.home_slot_id;
+        const loserTeam = slotRealTeam.get(loserSlot);
+        const loserLabel = `${km.round_id}-match-${km.match_index}-loser`;
+        const loserDest = downstreamByLabel.get(loserLabel);
+        if (loserTeam && loserDest) advance(loserDest, loserTeam);
+      }
+    }
+  }
+  return writes;
+}
+
+/**
+ * Advance real teams through the knockout bracket and persist the writes.
+ * Thin I/O wrapper over computeKnockoutAdvancement: loads the knockout
+ * matches + slot occupants, computes the downstream writes, upserts them.
+ * Recomputes the whole tree every call, so a later result correction
+ * self-heals. Idempotent.
+ *
+ * Depends on populateRealR32SlotsFromGroupResults (and
+ * populateRealBestThirdSlots) having run — those fill the R32 input slots
+ * this function reads.
+ */
+export async function populateRealKnockoutSlots(
+  supabase: SupabaseClient,
+): Promise<PopulateOutcome> {
+  const { data: matches, error: matchErr } = await supabase
+    .from("matches")
+    .select("id, round_id, home_slot_id, away_slot_id, status, winning_slot_id")
+    .not("round_id", "like", "group-%");
+  if (matchErr) return { ok: false, reason: `matches: ${matchErr.message}` };
+
+  const { data: slots, error: slotErr } = await supabase
+    .from("bracket_slots")
+    .select("id, round_id, slot_label, real_team_id");
+  if (slotErr) return { ok: false, reason: `slots: ${slotErr.message}` };
+
+  const slotRealTeam = new Map<string, string>();
+  const slotMeta = new Map<string, { round_id: string; slot_label: string }>();
+  for (const s of slots ?? []) {
+    if (s.real_team_id) slotRealTeam.set(s.id as string, s.real_team_id as string);
+    slotMeta.set(s.id as string, {
+      round_id: s.round_id as string,
+      slot_label: s.slot_label as string,
+    });
+  }
+
+  const writes = computeKnockoutAdvancement(
+    (matches ?? []) as KnockoutMatchRow[],
+    slotRealTeam,
+  );
+
+  if (writes.size === 0) {
+    return { ok: true, written: 0, skipped: "no knockout advancement yet" };
+  }
+
+  // Carry round_id/slot_label (both NOT NULL) so the upsert's INSERT branch
+  // is valid even though every target row already exists in the seed.
+  const rows: SlotWrite[] = [];
+  for (const [id, real_team_id] of writes) {
+    const meta = slotMeta.get(id);
+    if (!meta) return { ok: false, reason: `unknown downstream slot: ${id}` };
+    rows.push({ id, round_id: meta.round_id, slot_label: meta.slot_label, real_team_id });
+  }
+  const { error: upsertErr } = await supabase
+    .from("bracket_slots")
+    .upsert(rows, { onConflict: "id" });
+  if (upsertErr) return { ok: false, reason: `slot upsert: ${upsertErr.message}` };
+  return { ok: true, written: rows.length };
 }
 
 /**
@@ -170,13 +342,18 @@ export async function populateRealBestThirdSlots(
     return { ok: true, written: 0, skipped: loaded.skipped };
   }
 
-  const writes: { id: string; real_team_id: string }[] = [];
+  const writes: SlotWrite[] = [];
   for (const g of THIRD_PLACE_WINNER_GROUPS) {
     const assignedGroup = assignment[`1${g}` as WinnerSlot];
     const standings = loaded.standings.get(assignedGroup) ?? [];
     const third = standings.find((s) => s.rank === 3);
     if (third) {
-      writes.push({ id: `r32-best-3rd-vs-${g}`, real_team_id: third.team_id });
+      writes.push({
+        id: `r32-best-3rd-vs-${g}`,
+        round_id: "r32",
+        slot_label: `best-3rd-vs-${g}`,
+        real_team_id: third.team_id,
+      });
     }
   }
 

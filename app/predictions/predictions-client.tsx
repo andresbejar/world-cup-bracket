@@ -418,13 +418,22 @@ export function PredictionsClient({
       r32Slots = populateR32Slots(standingsByGroup, []);
     }
     // Override R32 input slot team_ids with reality when present. The
-    // cascade walks downstream from these, so reality propagates into
-    // R16+ via the user's slot-advancement picks.
+    // cascade walks downstream from these via the user's predicted
+    // winners, filling R16+ labels with the *predicted* advancer.
     const realOverridden = r32Slots.map((s) => {
       const real = realTeamIdBySlotLabel[s.slot_label];
       return real ? { ...s, team_id: real } : s;
     });
-    return computeKnockoutCascade(realOverridden, knockoutPreds);
+    const map = computeKnockoutCascade(realOverridden, knockoutPreds);
+    // Then overlay reality onto any downstream slot label the cron has
+    // already advanced (r32-match-N-winner, etc.), so a settled match's
+    // "actual" matchup shows who really advanced — not the user's
+    // predicted cascade. predictedSlotMap stays pure-prediction, so the
+    // "you predicted X" annotation still compares correctly.
+    for (const [label, teamId] of Object.entries(realTeamIdBySlotLabel)) {
+      map.set(label, teamId);
+    }
+    return map;
   }, [
     standingsByGroup,
     qualifyingGroupsArray,
@@ -619,17 +628,17 @@ export function PredictionsClient({
                         teamCodeAtLabel(match.home_slot_label) ?? "—";
                       const awayCode =
                         teamCodeAtLabel(match.away_slot_label) ?? "—";
-                      // Actual winner: read off the match row (cron sets
-                      // winning_slot_id via the score; penalty resolution is
-                      // its own column once that ships). For now derive from
-                      // score; tied finished knockouts will surface a
-                      // dash until the shootout column lands.
-                      const actualWinnerCode = knockoutWinnerCode(
-                        match.home_score,
-                        match.away_score,
-                        homeCode,
-                        awayCode,
-                      );
+                      // Actual winner: authoritative, off the match row's
+                      // winning_slot_id (the cron sets it from the
+                      // regulation score OR the penalty shootout). A still-
+                      // null winner (shootout not yet ingested) shows a dash.
+                      const actualWinningSlotId = match.winning_slot_id;
+                      const actualWinnerCode =
+                        actualWinningSlotId === match.home_slot_id
+                          ? homeCode
+                          : actualWinningSlotId === match.away_slot_id
+                            ? awayCode
+                            : null;
                       const predictedWinnerCode = state?.winner
                         ? state.winner === match.home_slot_id
                           ? homeCode
@@ -664,11 +673,7 @@ export function PredictionsClient({
                           pointsAwarded={scoreKnockoutPoints(
                             match,
                             state,
-                            actualWinnerCode === homeCode
-                              ? match.home_slot_id
-                              : actualWinnerCode === awayCode
-                                ? match.away_slot_id
-                                : null,
+                            actualWinningSlotId,
                           )}
                         />
                       );
@@ -995,22 +1000,6 @@ function knockoutRoundLabel(roundId: string): string {
     default:
       return roundId.toUpperCase();
   }
-}
-
-// Best-effort knockout winner from the regulation score. Returns null
-// when scores are tied — the polling job will surface penalty winners
-// on a dedicated column in a future pass; until then a tied finished
-// knockout shows ON PENS unattributed.
-function knockoutWinnerCode(
-  homeScore: number | null,
-  awayScore: number | null,
-  homeCode: string,
-  awayCode: string,
-): string | null {
-  if (homeScore == null || awayScore == null) return null;
-  if (homeScore > awayScore) return homeCode;
-  if (awayScore > homeScore) return awayCode;
-  return null;
 }
 
 function scoreGroupPoints(

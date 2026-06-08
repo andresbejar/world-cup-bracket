@@ -1,8 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { fetchFixtures, type FixtureResult } from "@/lib/apifootball";
-import { scoreMatch } from "@/lib/scoring-runtime";
-import { populateRealR32SlotsFromGroupResults } from "@/lib/reality";
+import { scoreMatch, scoreFinalists } from "@/lib/scoring-runtime";
+import {
+  populateRealR32SlotsFromGroupResults,
+  populateRealKnockoutSlots,
+} from "@/lib/reality";
 
 // POST /api/cron/poll-results
 //
@@ -62,7 +65,7 @@ export async function POST(request: NextRequest) {
   const { data: ourMatches, error: matchErr } = await supabase
     .from("matches")
     .select(
-      "id, apifootball_fixture_id, home_slot_id, away_slot_id, status",
+      "id, round_id, apifootball_fixture_id, home_slot_id, away_slot_id, status",
     )
     .not("apifootball_fixture_id", "is", null);
   if (matchErr) {
@@ -93,6 +96,16 @@ export async function POST(request: NextRequest) {
       away_score: fx.away_score,
       finished_at: fx.finished_at,
     };
+
+    // Knockout: record which side advanced (single source of truth for
+    // scoring + bracket advancement). Group matches never set this.
+    // Regulation → higher 90+ET score's slot. Tie → penalty-shootout
+    // winner from api-football. Tie with no shootout data yet, or
+    // cancelled → leave null; a later tick settles it.
+    const isKnockout = !(match.round_id as string).startsWith("group-");
+    if (isKnockout && fx.status === "finished") {
+      update.winning_slot_id = resolveWinningSlot(fx, match);
+    }
     const { error: upErr } = await supabase
       .from("matches")
       .update(update)
@@ -132,10 +145,15 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 4. If every group-stage match has finished, write the 24
-  // group-driven R32 slot real_team_ids. Idempotent — re-running
-  // post-R32 writes the same values.
+  // 4. Reality advancement. First land the 24 group-driven R32 slot
+  // real_team_ids (once every group match is finished). Then advance
+  // knockout winners (and SF losers) round-by-round into their downstream
+  // slots, and finally score the finalist podium bets. Order matters:
+  // knockout advancement reads R32 slots; finalist scoring reads the
+  // final/third-place slots that advancement fills. All idempotent.
   const realityOutcome = await populateRealR32SlotsFromGroupResults(supabase);
+  const knockoutReality = await populateRealKnockoutSlots(supabase);
+  const finalistOutcome = await scoreFinalists(supabase);
 
   return NextResponse.json({
     ok: true,
@@ -143,5 +161,30 @@ export async function POST(request: NextRequest) {
     scored,
     newly_finished: newlyFinished.length,
     reality: realityOutcome,
+    knockout_reality: knockoutReality,
+    finalists: finalistOutcome,
   });
+}
+
+/**
+ * Which slot advanced for a finished knockout match. Returns the
+ * regulation winner from the 90+ET score, or — when 90+ET was level —
+ * the penalty-shootout winner. Null when the result can't decide a side
+ * yet (level score with no shootout data ingested), in which case a
+ * later tick resolves it.
+ */
+function resolveWinningSlot(
+  fx: FixtureResult,
+  match: { home_slot_id: string; away_slot_id: string },
+): string | null {
+  const h = fx.home_score;
+  const a = fx.away_score;
+  if (h != null && a != null) {
+    if (h > a) return match.home_slot_id;
+    if (a > h) return match.away_slot_id;
+    // Level after 90+ET → decided on penalties.
+    if (fx.penalty_winner === "home") return match.home_slot_id;
+    if (fx.penalty_winner === "away") return match.away_slot_id;
+  }
+  return null;
 }
