@@ -64,12 +64,9 @@ export function KnockoutCard({
   const ready = homeTeam != null && awayTeam != null;
   const hasScore = homeScore != null && awayScore != null;
   const tied = hasScore && homeScore === awayScore;
-  const filled =
-    hasScore &&
-    predictedWinnerSlotId != null &&
-    // Tied state requires an explicit penalty pick; non-tied state
-    // auto-derives, so "filled" === any winner set.
-    (!tied || predictedWinnerSlotId !== null);
+  // A non-tied score auto-derives the winner; a tied score only gets one
+  // after the explicit penalty pick — so "filled" === score + winner set.
+  const filled = hasScore && predictedWinnerSlotId != null;
 
   // Compute the auto-derived winner from a candidate score. Used by the
   // score inputs so changing a score updates the winner side at the same
@@ -97,56 +94,55 @@ export function KnockoutCard({
         (ready ? "" : " opacity-60")
       }
     >
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim tabular-nums">
+      <header className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim tabular-nums">
           {roundLabel(match.round_id)} · M
-          {match.match_index.toString().padStart(2, "0")}
-        </p>
-        <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+          {match.match_index.toString().padStart(2, "0")} ·{" "}
           {shortDateTime(match.scheduled_at)}
         </p>
-      </div>
+        <SaveStatusLabel
+          status={saveStatus}
+          ready={ready}
+          filled={filled}
+        />
+      </header>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-3">
           <KnockoutTeamRow
             team={homeTeam}
             name={homeName}
             predictedCode={homePredictedCode}
           />
+          <ScoreInput
+            value={homeScore ?? 0}
+            disabled={!ready}
+            onChange={(n) => {
+              if (!ready) return;
+              const a = awayScore ?? 0;
+              onChange(n, a, autoWinner(n, a));
+            }}
+            // Match-key prefix keeps the accessible name unique per card
+            // (unresolved cards would otherwise all read "home score")
+            // while still ending in "score" for the e2e selector contract.
+            ariaLabel={`${roundLabel(match.round_id)} M${match.match_index} ${homeTeam ?? "home"} score`}
+          />
+        </div>
+        <div className="flex items-center gap-3">
           <KnockoutTeamRow
             team={awayTeam}
             name={awayName}
             predictedCode={awayPredictedCode}
           />
-        </div>
-
-        <div className="flex flex-col items-end gap-1.5 self-end sm:self-auto">
-          <div className="flex items-center gap-2">
-            <ScoreInput
-              value={homeScore ?? 0}
-              onChange={(n) => {
-                if (!ready) return;
-                const a = awayScore ?? 0;
-                onChange(n, a, autoWinner(n, a));
-              }}
-              ariaLabel="Home score"
-            />
-            <span className="font-mono text-xs text-text-dim">:</span>
-            <ScoreInput
-              value={awayScore ?? 0}
-              onChange={(n) => {
-                if (!ready) return;
-                const h = homeScore ?? 0;
-                onChange(h, n, autoWinner(h, n));
-              }}
-              ariaLabel="Away score"
-            />
-          </div>
-          <SaveStatusLabel
-            status={saveStatus}
-            ready={ready}
-            filled={filled}
+          <ScoreInput
+            value={awayScore ?? 0}
+            disabled={!ready}
+            onChange={(n) => {
+              if (!ready) return;
+              const h = homeScore ?? 0;
+              onChange(h, n, autoWinner(h, n));
+            }}
+            ariaLabel={`${roundLabel(match.round_id)} M${match.match_index} ${awayTeam ?? "away"} score`}
           />
         </div>
       </div>
@@ -188,8 +184,8 @@ function KnockoutTeamRow({
   predictedCode: string | null;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <div aria-hidden className="h-5 w-7 rounded-sm bg-surface-high" />
+    <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div aria-hidden className="h-5 w-7 shrink-0 rounded-sm bg-surface-high" />
       {team ? (
         <>
           <span className="font-mono text-sm font-bold uppercase tracking-[0.06em] text-text-primary">
