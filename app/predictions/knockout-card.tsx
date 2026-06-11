@@ -120,7 +120,7 @@ export function KnockoutCard({
             predictedCode={homePredictedCode}
           />
           <ScoreInput
-            value={homeScore ?? 0}
+            value={homeScore}
             disabled={!editable}
             onChange={(n) => {
               if (!editable) return;
@@ -140,7 +140,7 @@ export function KnockoutCard({
             predictedCode={awayPredictedCode}
           />
           <ScoreInput
-            value={awayScore ?? 0}
+            value={awayScore}
             disabled={!editable}
             onChange={(n) => {
               if (!editable) return;
