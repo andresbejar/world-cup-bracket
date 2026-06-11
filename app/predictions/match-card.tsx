@@ -64,7 +64,7 @@ export function MatchCard({
         <div className="flex items-center gap-3">
           <TeamRow team={match.home} />
           <ScoreInput
-            value={homeScore ?? 0}
+            value={homeScore}
             disabled={locked}
             onChange={(n) => {
               if (locked) return;
@@ -76,7 +76,7 @@ export function MatchCard({
         <div className="flex items-center gap-3">
           <TeamRow team={match.away} />
           <ScoreInput
-            value={awayScore ?? 0}
+            value={awayScore}
             disabled={locked}
             onChange={(n) => {
               if (locked) return;

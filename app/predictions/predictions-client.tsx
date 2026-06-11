@@ -247,6 +247,33 @@ export function PredictionsClient({
     [flushSave],
   );
 
+  // Knockout variant: a tied score with no penalty-winner pick is not yet
+  // a valid prediction — the API rejects it (validateKnockoutPrediction),
+  // which used to flash a spurious "retry". Update local state so the
+  // penalty picker appears, but hold the save until the pick lands (the
+  // card re-fires onChange with the winner set).
+  const writeKnockoutPrediction = useCallback(
+    (matchId: string, next: PredictionState) => {
+      const awaitingPenaltyPick =
+        next.home === next.away && next.winner == null;
+      if (!awaitingPenaltyPick) {
+        writePrediction(matchId, next);
+        return;
+      }
+      setPredictions((prev) => {
+        const m = new Map(prev);
+        m.set(matchId, next);
+        return m;
+      });
+      const existing = pendingTimers.current.get(matchId);
+      if (existing) {
+        clearTimeout(existing);
+        pendingTimers.current.delete(matchId);
+      }
+    },
+    [writePrediction],
+  );
+
   // Group cascade — computeGroupStandings × 12.
   //
   // Reality merge: for each group match, prefer the real 90+ET score when
@@ -715,7 +742,11 @@ export function PredictionsClient({
                         saveStatus={saveStatus.get(match.id) ?? "idle"}
                         locked={activeRoundLocked}
                         onChange={(home, away, winner) =>
-                          writePrediction(match.id, { home, away, winner })
+                          writeKnockoutPrediction(match.id, {
+                            home,
+                            away,
+                            winner,
+                          })
                         }
                       />
                     );
