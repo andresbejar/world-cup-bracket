@@ -35,6 +35,7 @@ import {
   type Team,
 } from "@/lib/bracket";
 import { hasRealResult } from "@/lib/match-display";
+import { checkRoundLock } from "@/lib/lock-check";
 import type {
   HydratedFinalistPicks,
   HydratedKnockoutMatch,
@@ -531,6 +532,21 @@ export function PredictionsClient({
     : rounds.find((r) => r.id === activeRoundId);
   const isKnockoutRound = !isPodium && activeRound?.stage !== "group";
 
+  // Client-side mirror of the API's lock check (lib/lock-check.ts is the
+  // shared pure helper, so semantics can't drift). `now` ticks every 60s,
+  // so a deadline passing mid-session freezes the cards within a minute.
+  // The server stays authoritative — an admin lock set after page load
+  // isn't visible here until reload, and those writes still 403 → "retry".
+  const activeRoundLocked = activeRound
+    ? !checkRoundLock(
+        {
+          locked_at: activeRound.locked_at,
+          deadline_at: activeRound.deadline_at,
+        },
+        now,
+      ).editable
+    : false;
+
   const activeGroupMatches = groupMatchesByRound.get(activeRoundId) ?? [];
   const activeKnockoutMatches = knockoutMatchesByRound.get(activeRoundId) ?? [];
 
@@ -617,6 +633,7 @@ export function PredictionsClient({
                     saveStatus={thirdPlaceSaveStatus}
                     groupPredictionsComplete={groupPredictionsComplete}
                     realQualifyingThirdTeamIds={realQualifyingThirdTeamIds}
+                    locked={activeRoundLocked}
                     onToggle={writeQualifyingGroup}
                   />
                 ) : null}
@@ -696,6 +713,7 @@ export function PredictionsClient({
                         awayScore={state?.away ?? null}
                         predictedWinnerSlotId={state?.winner ?? null}
                         saveStatus={saveStatus.get(match.id) ?? "idle"}
+                        locked={activeRoundLocked}
                         onChange={(home, away, winner) =>
                           writePrediction(match.id, { home, away, winner })
                         }
@@ -758,6 +776,7 @@ export function PredictionsClient({
                             homeScore={score?.home ?? null}
                             awayScore={score?.away ?? null}
                             saveStatus={saveStatus.get(match.id) ?? "idle"}
+                            locked={activeRoundLocked}
                             onChange={(h, a) =>
                               writePrediction(match.id, {
                                 home: h,

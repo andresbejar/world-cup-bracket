@@ -20,6 +20,8 @@ interface Props {
   homeScore: number | null;
   awayScore: number | null;
   saveStatus: "idle" | "saving" | "saved" | "error";
+  /** Round lock (admin locked_at or past deadline_at) — freezes the steppers. */
+  locked: boolean;
   onChange: (homeScore: number, awayScore: number) => void;
 }
 
@@ -29,6 +31,7 @@ export function MatchCard({
   homeScore,
   awayScore,
   saveStatus,
+  locked,
   onChange,
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -54,7 +57,7 @@ export function MatchCard({
           M{matchIndex.toString().padStart(2, "0")} &middot; Group{" "}
           {match.home.group_letter} &middot; {shortDateTime(match.scheduled_at)}
         </p>
-        <SaveStatusLabel status={saveStatus} hasValue={filled} />
+        <SaveStatusLabel status={saveStatus} hasValue={filled} locked={locked} />
       </header>
 
       <div className="flex flex-col gap-2">
@@ -62,7 +65,11 @@ export function MatchCard({
           <TeamRow team={match.home} />
           <ScoreInput
             value={homeScore ?? 0}
-            onChange={(n) => onChange(n, awayScore ?? 0)}
+            disabled={locked}
+            onChange={(n) => {
+              if (locked) return;
+              onChange(n, awayScore ?? 0);
+            }}
             ariaLabel={`${match.home.code} score`}
           />
         </div>
@@ -70,7 +77,11 @@ export function MatchCard({
           <TeamRow team={match.away} />
           <ScoreInput
             value={awayScore ?? 0}
-            onChange={(n) => onChange(homeScore ?? 0, n)}
+            disabled={locked}
+            onChange={(n) => {
+              if (locked) return;
+              onChange(homeScore ?? 0, n);
+            }}
             ariaLabel={`${match.away.code} score`}
           />
         </div>
@@ -109,10 +120,21 @@ function TeamRow({
 function SaveStatusLabel({
   status,
   hasValue,
+  locked,
 }: {
   status: "idle" | "saving" | "saved" | "error";
   hasValue: boolean;
+  locked: boolean;
 }) {
+  // Lock wins over everything — once the client knows the round is
+  // frozen there is nothing to save or retry.
+  if (locked) {
+    return (
+      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+        locked
+      </span>
+    );
+  }
   if (status === "idle") {
     return (
       <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
