@@ -41,6 +41,8 @@ interface Props {
    * stage has settled. When set, the selector switches to results mode.
    */
   realQualifyingThirdTeamIds: ReadonlySet<string> | null;
+  /** Round lock (admin locked_at or past deadline_at) — freezes the toggles. */
+  locked: boolean;
   onToggle: (group_letter: string, selected: boolean) => void;
 }
 
@@ -52,6 +54,7 @@ export function ThirdPlaceCluster({
   saveStatus,
   groupPredictionsComplete,
   realQualifyingThirdTeamIds,
+  locked,
   onToggle,
 }: Props) {
   const resolved = realQualifyingThirdTeamIds != null;
@@ -66,7 +69,7 @@ export function ThirdPlaceCluster({
       }, 0)
     : 0;
 
-  const disabled = resolved || !groupPredictionsComplete;
+  const disabled = resolved || !groupPredictionsComplete || locked;
   const valid = count === MAX;
 
   return (
@@ -203,11 +206,13 @@ export function ThirdPlaceCluster({
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
         {resolved
           ? `FIFA's 8 best thirds are set. You scored ${correctCount} of 8 here.`
-          : !groupPredictionsComplete
-            ? "Finish your group-stage predictions to unlock these picks."
-            : valid
-              ? "Locked in 8 · FIFA's Annex C decides each one's R32 opponent (+1 PT per correct qualifier)."
-              : `Select exactly 8 of 12 · ${MAX - count} to go. The bracket fills in once you've picked 8.`}
+          : locked
+            ? "Round is locked — these picks are frozen."
+            : !groupPredictionsComplete
+              ? "Finish your group-stage predictions to unlock these picks."
+              : valid
+                ? "Locked in 8 · FIFA's Annex C decides each one's R32 opponent (+1 PT per correct qualifier)."
+                : `Select exactly 8 of 12 · ${MAX - count} to go. The bracket fills in once you've picked 8.`}
       </p>
     </section>
   );

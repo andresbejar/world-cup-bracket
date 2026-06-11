@@ -39,6 +39,8 @@ interface Props {
   /** Currently-picked slot id (winner). Either home_slot_id, away_slot_id, or null. */
   predictedWinnerSlotId: string | null;
   saveStatus: "idle" | "saving" | "saved" | "error";
+  /** Round lock (admin locked_at or past deadline_at) — freezes the steppers. */
+  locked: boolean;
   onChange: (
     homeScore: number,
     awayScore: number,
@@ -58,10 +60,12 @@ export function KnockoutCard({
   awayScore,
   predictedWinnerSlotId,
   saveStatus,
+  locked,
   onChange,
 }: Props) {
   const [focused, setFocused] = useState(false);
   const ready = homeTeam != null && awayTeam != null;
+  const editable = ready && !locked;
   const hasScore = homeScore != null && awayScore != null;
   const tied = hasScore && homeScore === awayScore;
   // A non-tied score auto-derives the winner; a tied score only gets one
@@ -104,6 +108,7 @@ export function KnockoutCard({
           status={saveStatus}
           ready={ready}
           filled={filled}
+          locked={locked}
         />
       </header>
 
@@ -116,9 +121,9 @@ export function KnockoutCard({
           />
           <ScoreInput
             value={homeScore ?? 0}
-            disabled={!ready}
+            disabled={!editable}
             onChange={(n) => {
-              if (!ready) return;
+              if (!editable) return;
               const a = awayScore ?? 0;
               onChange(n, a, autoWinner(n, a));
             }}
@@ -136,9 +141,9 @@ export function KnockoutCard({
           />
           <ScoreInput
             value={awayScore ?? 0}
-            disabled={!ready}
+            disabled={!editable}
             onChange={(n) => {
-              if (!ready) return;
+              if (!editable) return;
               const h = homeScore ?? 0;
               onChange(h, n, autoWinner(h, n));
             }}
@@ -155,17 +160,19 @@ export function KnockoutCard({
           awayName={awayName}
           homeSelected={predictedWinnerSlotId === match.home_slot_id}
           awaySelected={predictedWinnerSlotId === match.away_slot_id}
-          onPick={(side) =>
+          disabled={locked}
+          onPick={(side) => {
+            if (locked) return;
             onChange(
               homeScore!,
               awayScore!,
               side === "home" ? match.home_slot_id : match.away_slot_id,
-            )
-          }
+            );
+          }}
         />
       ) : null}
 
-      {!ready ? (
+      {!ready && !locked ? (
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
           Pick winners in earlier rounds to unlock this match.
         </p>
@@ -219,6 +226,7 @@ function PenaltyPicker({
   awayName,
   homeSelected,
   awaySelected,
+  disabled,
   onPick,
 }: {
   homeTeam: string | null;
@@ -227,6 +235,7 @@ function PenaltyPicker({
   awayName: string | null;
   homeSelected: boolean;
   awaySelected: boolean;
+  disabled: boolean;
   onPick: (side: "home" | "away") => void;
 }) {
   return (
@@ -242,12 +251,14 @@ function PenaltyPicker({
         team={homeTeam}
         name={homeName}
         selected={homeSelected}
+        disabled={disabled}
         onClick={() => onPick("home")}
       />
       <PenaltyPill
         team={awayTeam}
         name={awayName}
         selected={awaySelected}
+        disabled={disabled}
         onClick={() => onPick("away")}
       />
       <span className="w-full font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted sm:ml-auto sm:w-auto">
@@ -261,17 +272,20 @@ function PenaltyPill({
   team,
   name,
   selected,
+  disabled,
   onClick,
 }: {
   team: string | null;
   name: string | null;
   selected: boolean;
+  disabled: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={selected}
       role="radio"
       aria-checked={selected}
@@ -282,7 +296,9 @@ function PenaltyPill({
         "inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 font-mono text-xs font-medium tracking-[0.04em] transition-colors duration-[var(--motion-micro)] " +
         (selected
           ? "border-accent bg-accent text-bg"
-          : "border-border bg-surface-high text-text-muted hover:text-text-primary")
+          : disabled
+            ? "border-border bg-surface-high text-text-dim"
+            : "border-border bg-surface-high text-text-muted hover:text-text-primary")
       }
     >
       {team ?? "—"}
@@ -295,12 +311,16 @@ function SaveStatusLabel({
   status,
   ready,
   filled,
+  locked,
 }: {
   status: "idle" | "saving" | "saved" | "error";
   ready: boolean;
   filled: boolean;
+  locked: boolean;
 }) {
-  if (!ready)
+  // Both flavors of frozen: the round itself is locked, or the matchup
+  // hasn't resolved from upstream picks yet.
+  if (locked || !ready)
     return (
       <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
         locked

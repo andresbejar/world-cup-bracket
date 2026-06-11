@@ -141,9 +141,13 @@ test.describe("round lock enforcement", () => {
     expect(body.error).toMatch(/deadline has passed/i);
   });
 
-  test("UI surfaces save failure when the round is locked", async ({
+  test("round locked at load: steppers render frozen, no write fires", async ({
     page,
   }) => {
+    // Lock BEFORE the page loads — the client reads locked_at off the
+    // server-rendered round data and freezes the cards: chevron buttons
+    // unmount, the score inputs disable, and the save status reads
+    // "locked" instead of inviting an edit that would 403.
     const admin = adminClient();
     await admin
       .from("rounds")
@@ -155,29 +159,65 @@ test.describe("round lock enforcement", () => {
       timeout: 15_000,
     });
 
-    // Wait for the prediction save attempt + 403 to land, then assert
-    // the save status surfaced an error rather than silently dropping
-    // the user's edit on the floor.
+    let predictionWrites = 0;
+    page.on("request", (req) => {
+      if (
+        req.url().endsWith("/api/predictions") &&
+        req.method() === "POST"
+      ) {
+        predictionWrites += 1;
+      }
+    });
+
+    // Every stepper chevron in the locked round is unmounted, every
+    // score input disabled, and the cards label themselves "locked".
+    await expect(
+      page.getByRole("spinbutton", { name: /score$/ }).first(),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: /score \+ increment$/ }),
+    ).toHaveCount(0);
+    await expect(page.getByText("locked").first()).toBeVisible();
+
+    // Typing into the disabled input must be impossible — and nothing
+    // may have fired a write while we looked.
+    expect(predictionWrites).toBe(0);
+  });
+
+  test("mid-session admin lock: server 403 surfaces as retry", async ({
+    page,
+  }) => {
+    // Load the page while the round is still editable — the client has
+    // no idea a lock is coming. This covers the race the client-side
+    // freeze can't: an admin lock set AFTER page load. The server stays
+    // authoritative; the optimistic edit 403s and the card must surface
+    // "retry" rather than silently dropping the user's edit.
+    await page.goto("/predictions");
+    await expect(page.getByText("GROUP STAGE · ACTIVE ROUND")).toBeVisible({
+      timeout: 15_000,
+    });
+    const firstIncrement = page
+      .getByRole("button", { name: /score \+ increment$/ })
+      .first();
+    await expect(firstIncrement).toBeVisible();
+
+    const admin = adminClient();
+    await admin
+      .from("rounds")
+      .update({ locked_at: new Date().toISOString() })
+      .eq("id", probeRoundId);
+
     const savePromise = page.waitForResponse(
       (res) =>
         res.url().endsWith("/api/predictions") &&
         res.request().method() === "POST",
       { timeout: 10_000 },
     );
-
-    const firstIncrement = page
-      .getByRole("button", { name: /score \+ increment$/ })
-      .first();
     await firstIncrement.click();
 
     const saveResponse = await savePromise;
     expect(saveResponse.status()).toBe(403);
 
-    // The current MatchCard surfaces failures as a small "retry" label
-    // next to the score input. This is the visible client-side proof
-    // that the server rejection registered — not just a silent failure.
-    // (A clearer "round is locked — admin closed predictions" message
-    // is a separate UX improvement worth its own ticket.)
     await expect(page.getByText("retry").first()).toBeVisible({
       timeout: 5_000,
     });
