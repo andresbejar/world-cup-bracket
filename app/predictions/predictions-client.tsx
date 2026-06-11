@@ -1007,6 +1007,10 @@ function formatCountdown(iso: string): string {
   if (ms <= 0) return "LOCKED";
   const days = Math.floor(ms / 86_400_000);
   const hours = Math.floor((ms % 86_400_000) / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  if (days === 0 && hours === 0) {
+    return `LOCKS IN ${minutes}M`;
+  }
   return `LOCKS IN ${days}D ${hours.toString().padStart(2, "0")}H`;
 }
 
