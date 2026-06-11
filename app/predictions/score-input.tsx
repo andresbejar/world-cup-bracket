@@ -17,10 +17,12 @@ export function ScoreInput({
   value,
   onChange,
   ariaLabel,
+  disabled = false,
 }: {
   value: number;
   onChange: (next: number) => void;
   ariaLabel: string;
+  disabled?: boolean;
 }) {
   const inputId = useId();
 
@@ -30,6 +32,9 @@ export function ScoreInput({
   }
 
   return (
+    // No opacity treatment on the disabled wrapper: disabled only occurs
+    // inside a not-ready knockout card that already dims the whole article
+    // to 60% — adding more here would stack multiplicatively.
     <div
       className="flex select-none items-stretch overflow-hidden rounded-sm border border-border bg-bg focus-within:border-accent-muted focus-within:bg-surface-high"
       style={{ minHeight: 44 }}
@@ -37,9 +42,16 @@ export function ScoreInput({
       <button
         type="button"
         aria-label={`${ariaLabel} − decrement`}
-        disabled={value <= MIN}
+        disabled={disabled || value <= MIN}
         onClick={() => onChange(clamp(value - 1))}
-        className="flex w-7 items-center justify-center font-mono text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary disabled:opacity-30"
+        // When the whole control is disabled the wrapper already dims at
+        // 50% — skip the per-button 30% so the two don't stack to ~15%.
+        className={
+          // w-11 (44px) on mobile per DESIGN.md § Accessibility touch
+          // targets; collapses to the tight 28px cell on desktop.
+          "flex w-11 items-center justify-center font-mono text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary sm:w-7" +
+          (disabled ? "" : " disabled:opacity-30")
+        }
       >
         −
       </button>
@@ -50,6 +62,7 @@ export function ScoreInput({
         min={MIN}
         max={MAX}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
         aria-label={ariaLabel}
         className="w-12 bg-transparent text-center font-mono text-lg font-medium tabular-nums text-text-primary outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -57,9 +70,12 @@ export function ScoreInput({
       <button
         type="button"
         aria-label={`${ariaLabel} + increment`}
-        disabled={value >= MAX}
+        disabled={disabled || value >= MAX}
         onClick={() => onChange(clamp(value + 1))}
-        className="flex w-7 items-center justify-center font-mono text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary disabled:opacity-30"
+        className={
+          "flex w-11 items-center justify-center font-mono text-text-muted transition-colors duration-[var(--motion-micro)] hover:text-text-primary sm:w-7" +
+          (disabled ? "" : " disabled:opacity-30")
+        }
       >
         +
       </button>

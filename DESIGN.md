@@ -193,7 +193,7 @@ Hierarchical. Different elements get different radii on purpose. **Not uniform.*
 
 These are the recurring patterns. Build them in `lib/ui/` (or extend shadcn primitives) — don't reinvent per-page.
 
-- **Match row:** horizontal card, two team rows, score input on the right, optional inline penalty-winner picker for tied knockout scores.
+- **Match row:** card with a mono meta header (match #, group/round, kickoff time on the left; save status on the right), then two stacked team rows — each row ends in its own score stepper so the team↔score pairing reads straight across at any viewport width. Optional inline penalty-winner picker for tied knockout scores. Never split teams and score inputs into separate columns.
 - **Round selector pills:** horizontal scrolling row, monospace caps text, active fills with `--accent`.
 - **Predicted-vs-real card:** triptych pattern (green / yellow / red) on result pages. User's prediction stays visible alongside reality.
 - **Bracket tree:** miniature diagram, 40x36px slot rectangles, connecting lines, current round emphasized with subtle accent band.
