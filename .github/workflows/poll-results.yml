@@ -1,13 +1,22 @@
 name: Poll match results
 
-# Hourly trigger that hits the Next.js API route to fetch fresh results from
+# Sub-hourly trigger that hits the Next.js API route to fetch fresh results from
 # api-sports.io and run scoring on any matches that just finished.
 #
 # Why GitHub Actions instead of Vercel Cron:
 #   Vercel Hobby plan is capped at one cron run per day (verified APT-3,
 #   2026-05-09). Pro plan ($20/month) is overkill for a ~2-month hobby.
-#   GitHub Actions free tier covers ~2000 min/month; hourly runs of a
-#   <30s job use ~360 min/month.
+#   GitHub Actions free tier covers ~2000 min/month; every-15-min runs of a
+#   <30s job use ~1440 min/month — still within free tier alongside the
+#   daily backup and PR-triggered Playwright runs.
+#
+# Why every 15 min when we only need hourly:
+#   GitHub Actions scheduled workflows are best-effort — under load they're
+#   delayed and silently dropped, so a nominal `0 * * * *` was firing only
+#   ~every 4h in practice (APT, 2026-06). Two mitigations: (1) avoid :00, the
+#   most congested minute on all of GitHub, and (2) schedule 4x/hour so a few
+#   skipped runs still leave us comfortably under an hour between actual runs.
+#   Scoring is idempotent (see DESIGN/architecture), so over-polling is safe.
 #
 # Required GitHub secrets (set via: gh secret set <NAME>):
 #   CRON_SECRET      — shared secret the API route validates before running
@@ -17,10 +26,10 @@ name: Poll match results
 
 on:
   schedule:
-    # Every hour at :00 UTC. GitHub Actions cron runs in UTC.
-    # GH Actions schedules can drift up to ~15 min during peak load,
-    # which is fine for our 30-second-leaderboard-polling UX.
-    - cron: '0 * * * *'
+    # Every 15 min at off-peak minutes (UTC). Deliberately NOT :00 — the top of
+    # the hour is the most throttled slot. Offset minutes + 4x/hour cadence keeps
+    # the real interval under an hour even when GitHub drops some scheduled runs.
+    - cron: '7,22,37,52 * * * *'
 
   # Manual trigger for testing or one-off catch-up runs after an outage.
   workflow_dispatch:
