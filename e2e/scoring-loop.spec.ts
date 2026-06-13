@@ -31,6 +31,7 @@ interface MatchSnapshot {
   home_score: number | null;
   away_score: number | null;
   finished_at: string | null;
+  scheduled_at: string;
 }
 
 const mutatedMatches: MatchSnapshot[] = [];
@@ -44,6 +45,15 @@ let testUserId = "";
 // /predictions. Server-side scoring (above) is unaffected — it runs off the
 // service-role client, not the page clock.
 const AFTER_KICKOFF = new Date("2026-07-01T00:00:00Z");
+
+// The suite was authored pre-tournament, when these seed matches were all
+// in the future. Now that real wall-clock has passed the earliest kickoffs,
+// the per-match lock (lib/lock-check.ts checkMatchLock) rejects a prediction
+// write to a kicked-off match. Push the target's kickoff just into the
+// future so the write is accepted again — kept well before AFTER_KICKOFF so
+// the browser clock still lands past kickoff for the triptych assertion.
+const editableKickoff = () =>
+  new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 
 test.describe("scoring loop", () => {
   test.beforeAll(async () => {
@@ -108,6 +118,7 @@ test.describe("scoring loop", () => {
           home_score: snap.home_score,
           away_score: snap.away_score,
           finished_at: snap.finished_at,
+          scheduled_at: snap.scheduled_at,
         })
         .eq("id", snap.id);
     }
@@ -130,11 +141,17 @@ test.describe("scoring loop", () => {
     // Snapshot the match BEFORE we mutate it so afterAll can restore.
     const { data: pre, error: preErr } = await admin
       .from("matches")
-      .select("id, status, home_score, away_score, finished_at")
+      .select("id, status, home_score, away_score, finished_at, scheduled_at")
       .eq("id", target.id)
       .single();
     if (preErr || !pre) throw preErr ?? new Error("match snapshot failed");
     mutatedMatches.push(pre as MatchSnapshot);
+
+    // Re-open this (now kicked-off) seed match so the write is accepted.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", target.id);
 
     // User predicts 2-1.
     const predRes = await request.post("/api/predictions", {
@@ -222,10 +239,16 @@ test.describe("scoring loop", () => {
 
     const { data: pre } = await admin
       .from("matches")
-      .select("id, status, home_score, away_score, finished_at")
+      .select("id, status, home_score, away_score, finished_at, scheduled_at")
       .eq("id", target.id)
       .single();
     if (pre) mutatedMatches.push(pre as MatchSnapshot);
+
+    // Re-open this (now kicked-off) seed match so the write is accepted.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", target.id);
 
     // Predict 3-0 home win.
     await request.post("/api/predictions", {
@@ -275,10 +298,16 @@ test.describe("scoring loop", () => {
 
     const { data: pre } = await admin
       .from("matches")
-      .select("id, status, home_score, away_score, finished_at")
+      .select("id, status, home_score, away_score, finished_at, scheduled_at")
       .eq("id", target.id)
       .single();
     if (pre) mutatedMatches.push(pre as MatchSnapshot);
+
+    // Re-open this (now kicked-off) seed match so the write is accepted.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", target.id);
 
     // Predict 0-3 away win.
     await request.post("/api/predictions", {
