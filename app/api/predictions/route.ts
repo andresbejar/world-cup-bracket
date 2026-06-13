@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireActiveUser } from "@/lib/auth-guard";
 import {
-  checkRoundLock,
+  checkMatchLock,
   validateKnockoutPrediction,
 } from "@/lib/lock-check";
 
@@ -35,10 +35,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Look up the match → its round so we can both lock-check and
-  // tie-validate. One join via Supabase REST; trivial overhead.
+  // tie-validate. The match's own `scheduled_at` is the per-match lock
+  // boundary; the round still carries the admin `locked_at` override.
+  // One join via Supabase REST; trivial overhead.
   const { data: match, error: matchErr } = await supabase
     .from("matches")
-    .select("id, round_id, rounds(stage, locked_at, deadline_at)")
+    .select("id, round_id, scheduled_at, rounds(stage, locked_at, deadline_at)")
     .eq("id", parsed.match_id)
     .maybeSingle();
   if (matchErr) {
@@ -59,8 +61,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const lock = checkRoundLock(
-    { locked_at: round.locked_at, deadline_at: round.deadline_at },
+  // Per-match lock: this match freezes at its own kickoff, independent of
+  // the other matches in the round. The round's admin `locked_at` still
+  // hard-locks every match in the round.
+  const lock = checkMatchLock(
+    { round_locked_at: round.locked_at, kickoff_at: match.scheduled_at },
     Date.now(),
   );
   if (!lock.editable) {
@@ -69,7 +74,7 @@ export async function POST(request: NextRequest) {
         error:
           lock.reason === "locked"
             ? "round is locked — admin closed predictions"
-            : "round deadline has passed — predictions for this round are frozen",
+            : "this match has kicked off — predictions are frozen",
         reason: lock.reason,
       },
       { status: 403 },

@@ -39,8 +39,10 @@ interface Props {
   /** Currently-picked slot id (winner). Either home_slot_id, away_slot_id, or null. */
   predictedWinnerSlotId: string | null;
   saveStatus: "idle" | "saving" | "saved" | "error";
-  /** Round lock (admin locked_at or past deadline_at) — freezes the steppers. */
+  /** Per-match lock (admin locked_at or kickoff passed) — freezes the steppers. */
   locked: boolean;
+  /** "LOCKS IN …" countdown to this match's kickoff; null once locked. */
+  lockHint: string | null;
   onChange: (
     homeScore: number,
     awayScore: number,
@@ -61,6 +63,7 @@ export function KnockoutCard({
   predictedWinnerSlotId,
   saveStatus,
   locked,
+  lockHint,
   onChange,
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -103,6 +106,9 @@ export function KnockoutCard({
           {roundLabel(match.round_id)} · M
           {match.match_index.toString().padStart(2, "0")} ·{" "}
           {shortDateTime(match.scheduled_at)}
+          {!locked && lockHint ? (
+            <span className="text-accent"> · {lockHint}</span>
+          ) : null}
         </p>
         <SaveStatusLabel
           status={saveStatus}
