@@ -41,6 +41,49 @@ export function checkRoundLock(
   return { editable: true };
 }
 
+export interface MatchLockState {
+  /**
+   * Hard lock — set when the match's round is administratively closed.
+   * The admin hard-lock still lives at round level; an individual match
+   * has no `locked_at` column of its own.
+   */
+  round_locked_at: string | null;
+  /** Soft lock — this match's own kickoff (`matches.scheduled_at`). */
+  kickoff_at: string;
+}
+
+/**
+ * Determine if a single match's writes should be accepted. A match is
+ * editable iff its round isn't administratively locked AND its own
+ * kickoff hasn't happened yet. Unlike `checkRoundLock`, the soft cutoff
+ * is the match's kickoff (no 4-hour-pre buffer) and is per-match, so
+ * later matches in the same round stay open after earlier ones lock.
+ *
+ * Reuses `LockStatus` (same `reason` values) so the client mirror and
+ * the API's 403 parsing stay identical to the round path.
+ */
+export function checkMatchLock(
+  match: MatchLockState,
+  nowMs: number,
+): LockStatus {
+  if (match.round_locked_at != null) {
+    return {
+      editable: false,
+      reason: "locked",
+      locked_at: match.round_locked_at,
+    };
+  }
+  const kickoffMs = Date.parse(match.kickoff_at);
+  if (Number.isFinite(kickoffMs) && nowMs >= kickoffMs) {
+    return {
+      editable: false,
+      reason: "past_deadline",
+      deadline_at: match.kickoff_at,
+    };
+  }
+  return { editable: true };
+}
+
 /**
  * Same shape for the finalist (tournament-wide) lock, which is the
  * first match kickoff — not a 4-hour-pre cutoff. Pre-tournament =

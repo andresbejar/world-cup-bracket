@@ -26,6 +26,13 @@ test.describe.configure({ mode: "serial" });
 // local and CI runs.
 test.setTimeout(90_000);
 
+// Kickoffs we pushed into the future so the seed predictions are accepted,
+// restored verbatim in afterAll. The suite predates the live tournament and
+// the per-match lock (lib/lock-check.ts checkMatchLock) now rejects writes to
+// any match whose kickoff has passed; this spec predicts every match, so we
+// re-open the ones real time has already passed.
+const restoredKickoffs: { id: string; scheduled_at: string }[] = [];
+
 test.describe("bracket build", () => {
   test.beforeAll(async () => {
     // Wipe any leftover state from prior spec runs so this file is
@@ -43,6 +50,43 @@ test.describe("bracket build", () => {
       .delete()
       .eq("user_id", user.id);
     await admin.from("finalist_picks").delete().eq("user_id", user.id);
+
+    // Re-open every match real wall-clock has already passed, so the full
+    // build (group + knockout + finalist) writes are all accepted. Snapshot
+    // first; afterAll restores the original kickoffs.
+    const nowIso = new Date().toISOString();
+    const { data: past, error: pastErr } = await admin
+      .from("matches")
+      .select("id, scheduled_at")
+      .lte("scheduled_at", nowIso);
+    if (pastErr) throw pastErr;
+    for (const m of past ?? []) {
+      restoredKickoffs.push({
+        id: m.id as string,
+        scheduled_at: m.scheduled_at as string,
+      });
+    }
+    if (restoredKickoffs.length > 0) {
+      const future = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+      await admin
+        .from("matches")
+        .update({ scheduled_at: future })
+        .in(
+          "id",
+          restoredKickoffs.map((m) => m.id),
+        );
+    }
+  });
+
+  test.afterAll(async () => {
+    const admin = adminClient();
+    for (const snap of restoredKickoffs) {
+      await admin
+        .from("matches")
+        .update({ scheduled_at: snap.scheduled_at })
+        .eq("id", snap.id);
+    }
+    restoredKickoffs.length = 0;
   });
 
   test("seed every pick via API, reload, verify UI hydrates", async ({

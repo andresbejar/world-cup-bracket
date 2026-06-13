@@ -35,7 +35,7 @@ import {
   type Team,
 } from "@/lib/bracket";
 import { hasRealResult } from "@/lib/match-display";
-import { checkRoundLock } from "@/lib/lock-check";
+import { checkMatchLock, checkRoundLock } from "@/lib/lock-check";
 import type {
   HydratedFinalistPicks,
   HydratedKnockoutMatch,
@@ -559,11 +559,10 @@ export function PredictionsClient({
     : rounds.find((r) => r.id === activeRoundId);
   const isKnockoutRound = !isPodium && activeRound?.stage !== "group";
 
-  // Client-side mirror of the API's lock check (lib/lock-check.ts is the
-  // shared pure helper, so semantics can't drift). `now` ticks every 60s,
-  // so a deadline passing mid-session freezes the cards within a minute.
-  // The server stays authoritative — an admin lock set after page load
-  // isn't visible here until reload, and those writes still 403 → "retry".
+  // Round-level lock — only the third-place cluster uses this now, since
+  // those picks lock at R32's deadline (not per match). `now` ticks every
+  // 60s so a deadline passing mid-session freezes the cluster within a
+  // minute.
   const activeRoundLocked = activeRound
     ? !checkRoundLock(
         {
@@ -574,8 +573,37 @@ export function PredictionsClient({
       ).editable
     : false;
 
+  // Per-match lock — client-side mirror of the API's checkMatchLock
+  // (lib/lock-check.ts is the shared pure helper, so semantics can't
+  // drift). Each match freezes at its own kickoff; the round's admin
+  // `locked_at` still hard-locks every match. The server stays
+  // authoritative — an admin lock set after page load isn't visible here
+  // until reload, and those writes still 403 → "retry".
+  const isMatchLocked = useCallback(
+    (kickoffAt: string) =>
+      !checkMatchLock(
+        { round_locked_at: activeRound?.locked_at ?? null, kickoff_at: kickoffAt },
+        now,
+      ).editable,
+    [activeRound, now],
+  );
+
   const activeGroupMatches = groupMatchesByRound.get(activeRoundId) ?? [];
   const activeKnockoutMatches = knockoutMatchesByRound.get(activeRoundId) ?? [];
+
+  // Earliest still-open kickoff in the active round — the next match to
+  // lock. Drives the round header countdown so it reads "NEXT LOCK IN …"
+  // (or "ALL LOCKED") instead of a single round-wide deadline. Cheap to
+  // recompute (≤16 matches), like activeGroupMatches above it.
+  const nextLockAt: number | null = (() => {
+    const matches = isKnockoutRound ? activeKnockoutMatches : activeGroupMatches;
+    let min: number | null = null;
+    for (const m of matches) {
+      const t = new Date(m.scheduled_at).getTime();
+      if (Number.isFinite(t) && t > now && (min == null || t < min)) min = t;
+    }
+    return min;
+  })();
 
   const filledInActiveRound = isKnockoutRound
     ? activeKnockoutMatches.filter((m) => {
@@ -637,7 +665,12 @@ export function PredictionsClient({
                     : "ACTIVE ROUND"
                 }
                 title={activeRound?.name ?? "Round"}
-                meta={meta(activeRound, filledInActiveRound, totalInActiveRound)}
+                meta={meta(
+                  activeRound,
+                  filledInActiveRound,
+                  totalInActiveRound,
+                  nextLockAt,
+                )}
               />
             )}
 
@@ -740,7 +773,8 @@ export function PredictionsClient({
                         awayScore={state?.away ?? null}
                         predictedWinnerSlotId={state?.winner ?? null}
                         saveStatus={saveStatus.get(match.id) ?? "idle"}
-                        locked={activeRoundLocked}
+                        locked={isMatchLocked(match.scheduled_at)}
+                        lockHint={formatLockHint(match.scheduled_at, now)}
                         onChange={(home, away, winner) =>
                           writeKnockoutPrediction(match.id, {
                             home,
@@ -807,7 +841,8 @@ export function PredictionsClient({
                             homeScore={score?.home ?? null}
                             awayScore={score?.away ?? null}
                             saveStatus={saveStatus.get(match.id) ?? "idle"}
-                            locked={activeRoundLocked}
+                            locked={isMatchLocked(match.scheduled_at)}
+                            lockHint={formatLockHint(match.scheduled_at, now)}
                             onChange={(h, a) =>
                               writePrediction(match.id, {
                                 home: h,
@@ -986,9 +1021,14 @@ function meta(
   round: HydratedRound | undefined,
   filled: number,
   total: number,
+  nextLockAt: number | null,
 ): ReactNode {
   if (!round) return null;
-  const countdown = formatCountdown(round.deadline_at);
+  // Matches lock individually at their own kickoff, so the round header
+  // counts down to the *next* match to lock rather than one round-wide
+  // deadline. "ALL LOCKED" once every match in the round has kicked off.
+  const countdown =
+    nextLockAt == null ? "ALL LOCKED" : `NEXT LOCK IN ${formatDelta(nextLockAt)}`;
   const counter =
     total > 0
       ? `${filled.toString().padStart(2, "0")}/${total.toString().padStart(2, "0")} PICKED`
@@ -1002,16 +1042,26 @@ function meta(
   );
 }
 
-function formatCountdown(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return "LOCKED";
+// Relative time from now to a future epoch-ms instant, rendered coarsely:
+// days+hours when ≥1 day out, hours+minutes within a day, minutes in the
+// last hour. Callers guard for already-elapsed instants.
+function formatDelta(targetMs: number): string {
+  const ms = targetMs - Date.now();
+  if (ms <= 0) return "0M";
   const days = Math.floor(ms / 86_400_000);
   const hours = Math.floor((ms % 86_400_000) / 3_600_000);
   const minutes = Math.floor((ms % 3_600_000) / 60_000);
-  if (days === 0 && hours === 0) {
-    return `LOCKS IN ${minutes}M`;
-  }
-  return `LOCKS IN ${days}D ${hours.toString().padStart(2, "0")}H`;
+  if (days >= 1) return `${days}D ${hours.toString().padStart(2, "0")}H`;
+  if (hours >= 1) return `${hours}H ${minutes.toString().padStart(2, "0")}M`;
+  return `${minutes}M`;
+}
+
+// Per-card "LOCKS IN …" hint, shown while a match is still editable.
+// Null once kickoff passes — the card's own "locked" label takes over.
+function formatLockHint(kickoffIso: string, nowMs: number): string | null {
+  const target = new Date(kickoffIso).getTime();
+  if (!Number.isFinite(target) || target <= nowMs) return null;
+  return `LOCKS IN ${formatDelta(target)}`;
 }
 
 function formatLockShort(iso: string): string {

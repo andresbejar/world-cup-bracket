@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { scoreMatch, clearMatchScoring } from "@/lib/scoring-runtime";
-import { adminClient, listGroupMatches } from "./helpers";
+import { adminClient, listGroupMatches, type GroupMatchRow } from "./helpers";
 import { TEST_USER_EMAIL } from "./global-setup";
 
 // Critical path #4 from the test plan: the reality loop. The heart of
@@ -31,9 +31,15 @@ interface MatchSnapshot {
   home_score: number | null;
   away_score: number | null;
   finished_at: string | null;
+  scheduled_at: string;
 }
 
 const mutatedMatches: MatchSnapshot[] = [];
+// The three matches this spec scores, pinned ONCE before any mutation.
+// Each test re-opens its target by pushing scheduled_at into the future,
+// which reorders listGroupMatches() — so we must not re-index that list
+// per test, or a later test would select an already-scored match.
+const targetMatches: GroupMatchRow[] = [];
 let testUserId = "";
 
 // The predicted-vs-real triptych only renders once a match's kickoff has
@@ -44,6 +50,15 @@ let testUserId = "";
 // /predictions. Server-side scoring (above) is unaffected — it runs off the
 // service-role client, not the page clock.
 const AFTER_KICKOFF = new Date("2026-07-01T00:00:00Z");
+
+// The suite was authored pre-tournament, when these seed matches were all
+// in the future. Now that real wall-clock has passed the earliest kickoffs,
+// the per-match lock (lib/lock-check.ts checkMatchLock) rejects a prediction
+// write to a kicked-off match. Push the target's kickoff just into the
+// future so the write is accepted again — kept well before AFTER_KICKOFF so
+// the browser clock still lands past kickoff for the triptych assertion.
+const editableKickoff = () =>
+  new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 
 test.describe("scoring loop", () => {
   test.beforeAll(async () => {
@@ -58,6 +73,12 @@ test.describe("scoring loop", () => {
     // we know our scoring assertion is on a fresh ledger.
     await admin.from("predictions").delete().eq("user_id", testUserId);
     await admin.from("users").update({ total_points: 0 }).eq("id", testUserId);
+
+    // Pin the three distinct matches we score, by id, before any test
+    // mutates kickoffs. Indexing a fresh listGroupMatches() per test would
+    // drift once earlier targets are future-dated.
+    const gm = await listGroupMatches();
+    targetMatches.push(gm[0], gm[1], gm[2]);
   });
 
   test.afterAll(async () => {
@@ -108,6 +129,7 @@ test.describe("scoring loop", () => {
           home_score: snap.home_score,
           away_score: snap.away_score,
           finished_at: snap.finished_at,
+          scheduled_at: snap.scheduled_at,
         })
         .eq("id", snap.id);
     }
@@ -124,17 +146,22 @@ test.describe("scoring loop", () => {
     request,
   }) => {
     const admin = adminClient();
-    const groupMatches = await listGroupMatches();
-    const target = groupMatches[0];
+    const target = targetMatches[0];
 
     // Snapshot the match BEFORE we mutate it so afterAll can restore.
     const { data: pre, error: preErr } = await admin
       .from("matches")
-      .select("id, status, home_score, away_score, finished_at")
+      .select("id, status, home_score, away_score, finished_at, scheduled_at")
       .eq("id", target.id)
       .single();
     if (preErr || !pre) throw preErr ?? new Error("match snapshot failed");
     mutatedMatches.push(pre as MatchSnapshot);
+
+    // Re-open this (now kicked-off) seed match so the write is accepted.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", target.id);
 
     // User predicts 2-1.
     const predRes = await request.post("/api/predictions", {
@@ -217,15 +244,20 @@ test.describe("scoring loop", () => {
     request,
   }) => {
     const admin = adminClient();
-    const groupMatches = await listGroupMatches();
-    const target = groupMatches[1];
+    const target = targetMatches[1];
 
     const { data: pre } = await admin
       .from("matches")
-      .select("id, status, home_score, away_score, finished_at")
+      .select("id, status, home_score, away_score, finished_at, scheduled_at")
       .eq("id", target.id)
       .single();
     if (pre) mutatedMatches.push(pre as MatchSnapshot);
+
+    // Re-open this (now kicked-off) seed match so the write is accepted.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", target.id);
 
     // Predict 3-0 home win.
     await request.post("/api/predictions", {
@@ -270,15 +302,20 @@ test.describe("scoring loop", () => {
     request,
   }) => {
     const admin = adminClient();
-    const groupMatches = await listGroupMatches();
-    const target = groupMatches[2];
+    const target = targetMatches[2];
 
     const { data: pre } = await admin
       .from("matches")
-      .select("id, status, home_score, away_score, finished_at")
+      .select("id, status, home_score, away_score, finished_at, scheduled_at")
       .eq("id", target.id)
       .single();
     if (pre) mutatedMatches.push(pre as MatchSnapshot);
+
+    // Re-open this (now kicked-off) seed match so the write is accepted.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", target.id);
 
     // Predict 0-3 away win.
     await request.post("/api/predictions", {

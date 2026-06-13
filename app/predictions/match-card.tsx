@@ -20,8 +20,10 @@ interface Props {
   homeScore: number | null;
   awayScore: number | null;
   saveStatus: "idle" | "saving" | "saved" | "error";
-  /** Round lock (admin locked_at or past deadline_at) — freezes the steppers. */
+  /** Per-match lock (admin locked_at or kickoff passed) — freezes the steppers. */
   locked: boolean;
+  /** "LOCKS IN …" countdown to this match's kickoff; null once locked. */
+  lockHint: string | null;
   onChange: (homeScore: number, awayScore: number) => void;
 }
 
@@ -32,6 +34,7 @@ export function MatchCard({
   awayScore,
   saveStatus,
   locked,
+  lockHint,
   onChange,
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -56,6 +59,9 @@ export function MatchCard({
         <p className="min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim tabular-nums">
           M{matchIndex.toString().padStart(2, "0")} &middot; Group{" "}
           {match.home.group_letter} &middot; {shortDateTime(match.scheduled_at)}
+          {!locked && lockHint ? (
+            <span className="text-accent"> &middot; {lockHint}</span>
+          ) : null}
         </p>
         <SaveStatusLabel status={saveStatus} hasValue={filled} locked={locked} />
       </header>
