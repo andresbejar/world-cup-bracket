@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { scoreMatch, clearMatchScoring } from "@/lib/scoring-runtime";
-import { adminClient, listGroupMatches } from "./helpers";
+import { adminClient, listGroupMatches, type GroupMatchRow } from "./helpers";
 import { TEST_USER_EMAIL } from "./global-setup";
 
 // Critical path #4 from the test plan: the reality loop. The heart of
@@ -35,6 +35,11 @@ interface MatchSnapshot {
 }
 
 const mutatedMatches: MatchSnapshot[] = [];
+// The three matches this spec scores, pinned ONCE before any mutation.
+// Each test re-opens its target by pushing scheduled_at into the future,
+// which reorders listGroupMatches() — so we must not re-index that list
+// per test, or a later test would select an already-scored match.
+const targetMatches: GroupMatchRow[] = [];
 let testUserId = "";
 
 // The predicted-vs-real triptych only renders once a match's kickoff has
@@ -68,6 +73,12 @@ test.describe("scoring loop", () => {
     // we know our scoring assertion is on a fresh ledger.
     await admin.from("predictions").delete().eq("user_id", testUserId);
     await admin.from("users").update({ total_points: 0 }).eq("id", testUserId);
+
+    // Pin the three distinct matches we score, by id, before any test
+    // mutates kickoffs. Indexing a fresh listGroupMatches() per test would
+    // drift once earlier targets are future-dated.
+    const gm = await listGroupMatches();
+    targetMatches.push(gm[0], gm[1], gm[2]);
   });
 
   test.afterAll(async () => {
@@ -135,8 +146,7 @@ test.describe("scoring loop", () => {
     request,
   }) => {
     const admin = adminClient();
-    const groupMatches = await listGroupMatches();
-    const target = groupMatches[0];
+    const target = targetMatches[0];
 
     // Snapshot the match BEFORE we mutate it so afterAll can restore.
     const { data: pre, error: preErr } = await admin
@@ -234,8 +244,7 @@ test.describe("scoring loop", () => {
     request,
   }) => {
     const admin = adminClient();
-    const groupMatches = await listGroupMatches();
-    const target = groupMatches[1];
+    const target = targetMatches[1];
 
     const { data: pre } = await admin
       .from("matches")
@@ -293,8 +302,7 @@ test.describe("scoring loop", () => {
     request,
   }) => {
     const admin = adminClient();
-    const groupMatches = await listGroupMatches();
-    const target = groupMatches[2];
+    const target = targetMatches[2];
 
     const { data: pre } = await admin
       .from("matches")
