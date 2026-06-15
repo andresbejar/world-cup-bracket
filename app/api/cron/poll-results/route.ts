@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { fetchFixtures, type FixtureResult } from "@/lib/apifootball";
 import { scoreMatch, scoreFinalists } from "@/lib/scoring-runtime";
@@ -7,11 +7,23 @@ import {
   populateRealKnockoutSlots,
 } from "@/lib/reality";
 import { applyKnockoutBackfill } from "@/lib/knockout-backfill";
+import { isInPollWindow } from "@/lib/poll-window";
 
 // POST /api/cron/poll-results
 //
-// Hourly polling job — triggered by .github/workflows/poll-results.yml.
-// Authorization: Bearer <CRON_SECRET> required; non-cron callers get 401.
+// Score-polling job. Primary trigger is an external every-5-min cron pinger
+// (cron-job.org); .github/workflows/poll-results.yml is a sparse backstop that
+// hits it with ?full=1 (see "Self-throttle" below). Authorization: Bearer
+// <CRON_SECRET> required; non-cron callers get 401.
+//
+// Self-throttle (APT-60): we only care about FINAL results, so there's no point
+// pulling api-football outside the window where a match could be ending. Unless
+// ?full=1 is set, the job first checks whether any not-yet-finished match is in
+// its expected-end window (isInPollWindow); if none, it returns {idle:true}
+// without touching api-football or the scoring/reality sweeps. That keeps the
+// always-on 5-min pinger ~free on quota outside live windows, and concentrates
+// polling right around each match's expected end. ?full=1 bypasses the gate so
+// the backstop still runs backfill + straggler scoring + reality between rounds.
 //
 // Lifecycle:
 //   0. Backfill knockout fixture ids as api-sports publishes them
@@ -28,7 +40,22 @@ import { applyKnockoutBackfill } from "@/lib/knockout-backfill";
 //      runner-up-{A..L} real_team_ids
 //
 // All four steps are safe to repeat. A failed mid-flight tick retries
-// next hour with no double-counting.
+// next time with no double-counting.
+//
+// Execution model (APT-60): the fetch+score+reality sweep can run >30s, but the
+// external 5-min pinger caps each request at 30s. So the default (pinger) path
+// runs runPipeline() in the background via `after()` and acknowledges the
+// trigger immediately with 202. The work is idempotent, so a dropped background
+// run self-heals on the next tick. The ?full=1 backstop path stays synchronous
+// (GitHub Actions has a 5-min job timeout, not 30s) so it returns real counts
+// and fails loudly — that's where pipeline errors surface.
+
+// Give the background sweep headroom past the platform's short default.
+export const maxDuration = 60;
+
+type SupabaseClient = ReturnType<typeof createServiceRoleClient>;
+type PipelineResult = { ok: boolean } & Record<string, unknown>;
+
 export async function POST(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
@@ -50,7 +77,56 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
+  const fullSweep = new URL(request.url).searchParams.get("full") === "1";
 
+  if (!fullSweep) {
+    // Self-throttle gate. Skip the whole pipeline (and its api-football call)
+    // unless a match is in its expected-end window.
+    const { data: pending, error: pendingErr } = await supabase
+      .from("matches")
+      .select("round_id, scheduled_at, status")
+      .in("status", ["scheduled", "in_progress"]);
+    if (pendingErr) {
+      return NextResponse.json(
+        { ok: false, stage: "poll-window", reason: pendingErr.message },
+        { status: 500 },
+      );
+    }
+    const nowMs = Date.now();
+    if (!(pending ?? []).some((m) => isInPollWindow(m, nowMs))) {
+      return NextResponse.json({ ok: true, idle: true });
+    }
+
+    // Active window → run the sweep AFTER responding, so the 30s-capped pinger
+    // isn't blocked by it. Fire-and-forget; idempotent so failures self-heal.
+    after(async () => {
+      try {
+        const result = await runPipeline(supabase, apiHost, apiKey);
+        console.log(
+          "[cron/poll-results] background sweep:",
+          JSON.stringify(result),
+        );
+      } catch (e) {
+        console.error("[cron/poll-results] background sweep threw:", e);
+      }
+    });
+    return NextResponse.json({ ok: true, scheduled: true }, { status: 202 });
+  }
+
+  // ?full=1 backstop → synchronous, returns real counts and 500s on failure.
+  const result = await runPipeline(supabase, apiHost, apiKey);
+  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+}
+
+// The fetch → upsert → score → advance sweep. Pure of HTTP concerns: returns a
+// plain result object so it can run either synchronously (?full=1) or inside
+// `after()`. Returns { ok: false, stage, reason } on a hard DB error; soft DB /
+// api-football hiccups are logged and skipped so a later tick retries.
+async function runPipeline(
+  supabase: SupabaseClient,
+  apiHost: string,
+  apiKey: string,
+): Promise<PipelineResult> {
   // 0. Backfill knockout fixture ids. The seed leaves them null (api-sports
   // hadn't published the 2026 knockout bracket); as it publishes — possibly
   // incrementally, even before the group stage fully clears — link each
@@ -62,11 +138,11 @@ export async function POST(request: NextRequest) {
   // 1. Pull fresh fixtures from api-football. Soft skip on rate limit / 5xx.
   const fixtures = await fetchFixtures({ host: apiHost, key: apiKey });
   if (!fixtures) {
-    return NextResponse.json({
+    return {
       ok: true,
       stage: "fetch",
       skipped: "api-football returned null (rate limit, 5xx, or malformed)",
-    });
+    };
   }
 
   // 2. Upsert each match. We join by apifootball_fixture_id which the
@@ -80,10 +156,7 @@ export async function POST(request: NextRequest) {
     )
     .not("apifootball_fixture_id", "is", null);
   if (matchErr) {
-    return NextResponse.json(
-      { ok: false, stage: "match-lookup", reason: matchErr.message },
-      { status: 500 },
-    );
+    return { ok: false, stage: "match-lookup", reason: matchErr.message };
   }
   const matchByFixtureId = new Map<number, (typeof ourMatches)[number]>();
   for (const m of ourMatches ?? []) {
@@ -141,10 +214,7 @@ export async function POST(request: NextRequest) {
     .select("id")
     .in("status", ["finished", "cancelled"]);
   if (finErr) {
-    return NextResponse.json(
-      { ok: false, stage: "finished-lookup", reason: finErr.message },
-      { status: 500 },
-    );
+    return { ok: false, stage: "finished-lookup", reason: finErr.message };
   }
   let scored = 0;
   for (const m of finishedRows ?? []) {
@@ -166,7 +236,7 @@ export async function POST(request: NextRequest) {
   const knockoutReality = await populateRealKnockoutSlots(supabase);
   const finalistOutcome = await scoreFinalists(supabase);
 
-  return NextResponse.json({
+  return {
     ok: true,
     backfill,
     upserted,
@@ -175,7 +245,7 @@ export async function POST(request: NextRequest) {
     reality: realityOutcome,
     knockout_reality: knockoutReality,
     finalists: finalistOutcome,
-  });
+  };
 }
 
 /**
