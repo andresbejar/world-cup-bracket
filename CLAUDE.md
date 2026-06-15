@@ -36,17 +36,21 @@ The full design doc lives at `designs/andresbejar-main-design-20260509-161531.md
 **self-throttling**: each call first checks whether any not-yet-finished match is
 in its expected-end window (`lib/poll-window.ts` `isInPollWindow` — kickoff+1h45m
 through a per-stage cap; group 2h15m, knockout 3h45m for ET+penalties). If none,
-it returns `{idle:true}` without touching api-football. We never poll the live
-phase — only the final result matters. `?full=1` bypasses the gate and forces a
-complete sweep (backfill + straggler scoring + reality advancement).
+it returns `{idle:true}` without touching api-football. It also runs when a
+`finished` match still has unscored predictions (so a missed scoring self-heals
+even once the match leaves its window). We never poll the live phase — only the
+final result matters. `?full=1` bypasses the gate and forces a complete sweep
+(fetch + score all + reality advancement).
 
-**Execution model:** the fetch+score+reality sweep can take >30s, but the pinger
-caps each request at 30s. So on the pinger (non-`?full=1`) path the route runs the
-sweep in the background via `after()` and returns `202 {scheduled:true}`
-immediately — the work finishes server-side (`maxDuration = 60`). It's idempotent,
-so a dropped background run self-heals next tick. **Pipeline errors are NOT visible
-to the pinger** on this path (it already got 202); they surface in Vercel logs and
-on the synchronous `?full=1` backstop, which returns real counts / 500s on failure.
+**Execution model:** runs **synchronously** and returns real counts (`200`) or
+`500` on a hard error. Each tick stays fast because (a) scoring is **incremental**
+— only matches with unscored predictions, capped at `SCORE_LIMIT` per tick (a
+backlog drains across ticks; `?full=1` is uncapped), and (b) the per-user
+`total_points` recompute is **parallelized** in bounded batches
+(`lib/scoring-runtime.ts`, via `lib/chunk.ts`). An earlier version ran the sweep
+in a fire-and-forget `after()` to dodge the pinger's 30s cap, but the heavy
+scoring loop got truncated after the quick match-upsert — results updated, scores
+didn't. Synchronous + incremental avoids that and surfaces failures to the pinger.
 
 Two triggers, by design:
 

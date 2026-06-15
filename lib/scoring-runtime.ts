@@ -11,6 +11,7 @@ import {
   planMatchScoring,
   type ScorablePrediction,
 } from "./scoring";
+import { chunk } from "./chunk";
 import {
   computeThirdPlacePlacementPoints,
   computeGroupStandings,
@@ -23,6 +24,12 @@ import {
   type Team,
 } from "./bracket";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+// Per-user total recompute is ~9 sequential queries; each user's rows are
+// independent, so run them in bounded-concurrency batches to keep a single
+// match's scoring fast (~10s → ~1-2s for a 50-user pool) without flooding the
+// connection pool.
+const RECOMPUTE_CONCURRENCY = 8;
 
 export type ScoreMatchOutcome =
   | { ok: true; scored: number; skipped?: undefined }
@@ -133,16 +140,22 @@ export async function scoreMatch(
     return { ok: false, reason: `prediction upsert: ${upsertErr.message}` };
   }
 
-  // Recompute users.total_points for affected users. One round-trip
-  // per user — fine for a 5-50 person pool. APT-29 may materialize
-  // via a SQL trigger later.
-  for (const user_id of plan.affected_user_ids) {
-    const total = await recomputeUserTotal(supabase, user_id);
-    if (total.ok === false) {
-      console.error(
-        `[scoring] total recompute failed for ${user_id}:`,
-        total.reason,
-      );
+  // Recompute users.total_points for affected users, in bounded-concurrency
+  // batches (each user is independent). A failed recompute is logged, not
+  // fatal — the next poll tick re-scores it (idempotent SET semantics).
+  for (const batch of chunk(plan.affected_user_ids, RECOMPUTE_CONCURRENCY)) {
+    const results = await Promise.all(
+      batch.map((user_id) =>
+        recomputeUserTotal(supabase, user_id).then((r) => ({ user_id, r })),
+      ),
+    );
+    for (const { user_id, r } of results) {
+      if (r.ok === false) {
+        console.error(
+          `[scoring] total recompute failed for ${user_id}:`,
+          r.reason,
+        );
+      }
     }
   }
 
@@ -250,21 +263,41 @@ export async function scoreFinalists(
   if (picksErr) return { ok: false, reason: `finalist picks: ${picksErr.message}` };
   if (!picks || picks.length === 0) return { ok: true, scored: 0, skipped: "no finalist picks" };
 
+  // Update each pick's points + recompute its user's total, in bounded
+  // batches (independent per user). Hard-fail on the first error so the
+  // caller surfaces it; idempotent SET semantics make a retry safe.
   let scored = 0;
-  for (const p of picks) {
-    const points = computeFinalistPoints(p as unknown as FinalistPicks, standings);
-    const { error: updErr } = await supabase
-      .from("finalist_picks")
-      .update({ points_awarded: points })
-      .eq("user_id", p.user_id as string);
-    if (updErr) {
-      return { ok: false, reason: `finalist update ${p.user_id}: ${updErr.message}` };
+  for (const batch of chunk(picks, RECOMPUTE_CONCURRENCY)) {
+    const results = await Promise.all(
+      batch.map(async (p) => {
+        const points = computeFinalistPoints(
+          p as unknown as FinalistPicks,
+          standings,
+        );
+        const { error: updErr } = await supabase
+          .from("finalist_picks")
+          .update({ points_awarded: points })
+          .eq("user_id", p.user_id as string);
+        if (updErr) {
+          return {
+            ok: false as const,
+            reason: `finalist update ${p.user_id}: ${updErr.message}`,
+          };
+        }
+        const total = await recomputeUserTotal(supabase, p.user_id as string);
+        if (total.ok === false) {
+          return {
+            ok: false as const,
+            reason: `recompute ${p.user_id}: ${total.reason}`,
+          };
+        }
+        return { ok: true as const };
+      }),
+    );
+    for (const r of results) {
+      if (r.ok === false) return { ok: false, reason: r.reason };
+      scored += 1;
     }
-    const total = await recomputeUserTotal(supabase, p.user_id as string);
-    if (total.ok === false) {
-      return { ok: false, reason: `recompute ${p.user_id}: ${total.reason}` };
-    }
-    scored += 1;
   }
   return { ok: true, scored };
 }
