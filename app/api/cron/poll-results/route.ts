@@ -1,4 +1,4 @@
-import { NextResponse, after, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { fetchFixtures, type FixtureResult } from "@/lib/apifootball";
 import { scoreMatch, scoreFinalists } from "@/lib/scoring-runtime";
@@ -39,19 +39,25 @@ import { isInPollWindow } from "@/lib/poll-window";
 //      populateRealR32SlotsFromGroupResults to land winner-{A..L} +
 //      runner-up-{A..L} real_team_ids
 //
-// All four steps are safe to repeat. A failed mid-flight tick retries
-// next time with no double-counting.
+// All steps are safe to repeat. A failed mid-flight tick retries next time
+// with no double-counting.
 //
-// Execution model (APT-60): the fetch+score+reality sweep can run >30s, but the
-// external 5-min pinger caps each request at 30s. So the default (pinger) path
-// runs runPipeline() in the background via `after()` and acknowledges the
-// trigger immediately with 202. The work is idempotent, so a dropped background
-// run self-heals on the next tick. The ?full=1 backstop path stays synchronous
-// (GitHub Actions has a 5-min job timeout, not 30s) so it returns real counts
-// and fails loudly — that's where pipeline errors surface.
+// Execution model (APT-60 + fix): runs SYNCHRONOUSLY. Scoring is incremental —
+// each tick only scores matches that still have unscored predictions (capped at
+// SCORE_LIMIT), and the per-user total recompute is parallelized — so an active
+// tick finishes in a few seconds, well under the pinger's 30s cap. (An earlier
+// version ran the sweep in a fire-and-forget `after()`; the heavy scoring loop
+// was truncated after the quick match-upsert, so results updated but scores
+// never landed.) Even if a tick runs long, the Vercel function completes
+// server-side up to maxDuration, and the next tick re-derives the worklist.
 
-// Give the background sweep headroom past the platform's short default.
+// Headroom for a synchronous tick (and the ?full=1 backstop clearing a backlog).
 export const maxDuration = 60;
+
+// Max matches to score per pinger tick. Steady state finishes 0-2 matches per
+// window so this is rarely hit; a backlog drains across ticks because the gate
+// keeps firing while unscored work remains. ?full=1 ignores the cap.
+const SCORE_LIMIT = 5;
 
 type SupabaseClient = ReturnType<typeof createServiceRoleClient>;
 type PipelineResult = { ok: boolean } & Record<string, unknown>;
@@ -79,150 +85,187 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceRoleClient();
   const fullSweep = new URL(request.url).searchParams.get("full") === "1";
 
-  if (!fullSweep) {
-    // Self-throttle gate. Skip the whole pipeline (and its api-football call)
-    // unless a match is in its expected-end window.
-    const { data: pending, error: pendingErr } = await supabase
-      .from("matches")
-      .select("round_id, scheduled_at, status")
-      .in("status", ["scheduled", "in_progress"]);
-    if (pendingErr) {
+  // The ?full=1 backstop always runs the complete sweep (fetch + score all).
+  if (fullSweep) {
+    const result = await runPipeline(supabase, apiHost, apiKey, {
+      fetch: true,
+      scoreLimit: Infinity,
+    });
+    return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+  }
+
+  // Pinger path. Two cheap reasons to do work:
+  //   inWindow    — a match is in its expected-end window → fetch fresh results
+  //   hasUnscored — a finished match still has unscored predictions → score it
+  // Gating scoring on hasUnscored (not just inWindow) is what makes a missed
+  // scoring self-heal: a match that already flipped to `finished` is no longer
+  // in-window, but it's still picked up here until its points land.
+  const { data: pending, error: pendingErr } = await supabase
+    .from("matches")
+    .select("round_id, scheduled_at, status")
+    .in("status", ["scheduled", "in_progress"]);
+  if (pendingErr) {
+    return NextResponse.json(
+      { ok: false, stage: "poll-window", reason: pendingErr.message },
+      { status: 500 },
+    );
+  }
+  const nowMs = Date.now();
+  const inWindow = (pending ?? []).some((m) => isInPollWindow(m, nowMs));
+
+  // Only pay for the unscored-work check when we're not already fetching.
+  let proceed = inWindow;
+  if (!proceed) {
+    const needing = await findMatchesNeedingScoring(supabase, 1);
+    if (needing.error) {
       return NextResponse.json(
-        { ok: false, stage: "poll-window", reason: pendingErr.message },
+        { ok: false, stage: "needs-scoring-lookup", reason: needing.error },
         { status: 500 },
       );
     }
-    const nowMs = Date.now();
-    if (!(pending ?? []).some((m) => isInPollWindow(m, nowMs))) {
-      return NextResponse.json({ ok: true, idle: true });
-    }
-
-    // Active window → run the sweep AFTER responding, so the 30s-capped pinger
-    // isn't blocked by it. Fire-and-forget; idempotent so failures self-heal.
-    after(async () => {
-      try {
-        const result = await runPipeline(supabase, apiHost, apiKey);
-        console.log(
-          "[cron/poll-results] background sweep:",
-          JSON.stringify(result),
-        );
-      } catch (e) {
-        console.error("[cron/poll-results] background sweep threw:", e);
-      }
-    });
-    return NextResponse.json({ ok: true, scheduled: true }, { status: 202 });
+    proceed = needing.ids.length > 0;
+  }
+  if (!proceed) {
+    return NextResponse.json({ ok: true, idle: true });
   }
 
-  // ?full=1 backstop → synchronous, returns real counts and 500s on failure.
-  const result = await runPipeline(supabase, apiHost, apiKey);
+  const result = await runPipeline(supabase, apiHost, apiKey, {
+    fetch: inWindow,
+    scoreLimit: SCORE_LIMIT,
+  });
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }
 
-// The fetch → upsert → score → advance sweep. Pure of HTTP concerns: returns a
-// plain result object so it can run either synchronously (?full=1) or inside
-// `after()`. Returns { ok: false, stage, reason } on a hard DB error; soft DB /
-// api-football hiccups are logged and skipped so a later tick retries.
+/**
+ * Matches that still need scoring: `finished`/`cancelled` rows that have at
+ * least one prediction with `points_awarded IS NULL`. Oldest-finished first,
+ * capped at `limit` (`Infinity` for the full backstop). Two cheap queries; the
+ * `points_awarded IS NULL` predicate is the scoring-state flag (no extra column).
+ */
+async function findMatchesNeedingScoring(
+  supabase: SupabaseClient,
+  limit: number,
+): Promise<{ ids: string[]; error?: string }> {
+  const { data: finished, error: finErr } = await supabase
+    .from("matches")
+    .select("id, finished_at")
+    .in("status", ["finished", "cancelled"])
+    .order("finished_at", { nullsFirst: true });
+  if (finErr) return { ids: [], error: finErr.message };
+  const finishedIds = (finished ?? []).map((m) => m.id as string);
+  if (finishedIds.length === 0) return { ids: [] };
+
+  const { data: unscored, error: unErr } = await supabase
+    .from("predictions")
+    .select("match_id")
+    .is("points_awarded", null)
+    .in("match_id", finishedIds);
+  if (unErr) return { ids: [], error: unErr.message };
+  const needs = new Set((unscored ?? []).map((r) => r.match_id as string));
+
+  // Preserve oldest-finished order, then cap.
+  return { ids: finishedIds.filter((id) => needs.has(id)).slice(0, limit) };
+}
+
+// The (optional) fetch+upsert → score → advance sweep. Runs synchronously.
+// opts.fetch gates the api-football steps (0-2); opts.scoreLimit caps how many
+// matches are scored this tick. Returns a plain result object: { ok: false,
+// stage, reason } on a hard DB error; soft api-football hiccups set fetch_skipped
+// and still fall through to scoring so a backlog drains.
 async function runPipeline(
   supabase: SupabaseClient,
   apiHost: string,
   apiKey: string,
+  opts: { fetch: boolean; scoreLimit: number },
 ): Promise<PipelineResult> {
-  // 0. Backfill knockout fixture ids. The seed leaves them null (api-sports
-  // hadn't published the 2026 knockout bracket); as it publishes — possibly
-  // incrementally, even before the group stage fully clears — link each
-  // published fixture to our match so the steps below ingest/score it.
-  // Runs first so freshly-linked knockouts are picked up the same tick.
-  // Idempotent; soft-skips on fetch failure.
-  const backfill = await applyKnockoutBackfill(supabase, apiHost, apiKey);
-
-  // 1. Pull fresh fixtures from api-football. Soft skip on rate limit / 5xx.
-  const fixtures = await fetchFixtures({ host: apiHost, key: apiKey });
-  if (!fixtures) {
-    return {
-      ok: true,
-      stage: "fetch",
-      skipped: "api-football returned null (rate limit, 5xx, or malformed)",
-    };
-  }
-
-  // 2. Upsert each match. We join by apifootball_fixture_id which the
-  // seed already populated for group matches; knockout fixtures don't
-  // exist in api-football until FIFA publishes, so they're ignored
-  // for now.
-  const { data: ourMatches, error: matchErr } = await supabase
-    .from("matches")
-    .select(
-      "id, round_id, apifootball_fixture_id, home_slot_id, away_slot_id, status",
-    )
-    .not("apifootball_fixture_id", "is", null);
-  if (matchErr) {
-    return { ok: false, stage: "match-lookup", reason: matchErr.message };
-  }
-  const matchByFixtureId = new Map<number, (typeof ourMatches)[number]>();
-  for (const m of ourMatches ?? []) {
-    matchByFixtureId.set(m.apifootball_fixture_id as number, m);
-  }
-
+  let backfill: unknown = { skipped: "fetch disabled" };
   let upserted = 0;
-  const newlyFinished: string[] = [];
-  for (const fx of fixtures) {
-    const match = matchByFixtureId.get(fx.apifootball_fixture_id);
-    if (!match) continue; // unknown fixture — not in our seed
-    const wasFinished =
-      match.status === "finished" || match.status === "cancelled";
-    const willBeFinished =
-      fx.status === "finished" || fx.status === "cancelled";
+  let fetchSkipped: string | undefined;
 
-    const update: Record<string, unknown> = {
-      id: match.id,
-      status: fx.status,
-      home_score: fx.home_score,
-      away_score: fx.away_score,
-      finished_at: fx.finished_at,
-    };
+  // Steps 0-2 hit api-football, so run them only when a match is in its
+  // expected-end window (opts.fetch) or for the ?full=1 backstop. A scoring-
+  // only tick skips straight to step 3 and spends no api quota.
+  if (opts.fetch) {
+    // 0. Backfill knockout fixture ids. The seed leaves them null (api-sports
+    // hadn't published the 2026 knockout bracket); as it publishes — possibly
+    // incrementally, even before the group stage fully clears — link each
+    // published fixture to our match so the steps below ingest/score it.
+    // Idempotent; soft-skips on fetch failure.
+    backfill = await applyKnockoutBackfill(supabase, apiHost, apiKey);
 
-    // Knockout: record which side advanced (single source of truth for
-    // scoring + bracket advancement). Group matches never set this.
-    // Regulation → higher 90+ET score's slot. Tie → penalty-shootout
-    // winner from api-football. Tie with no shootout data yet, or
-    // cancelled → leave null; a later tick settles it.
-    const isKnockout = !(match.round_id as string).startsWith("group-");
-    if (isKnockout && fx.status === "finished") {
-      update.winning_slot_id = resolveWinningSlot(fx, match);
-    }
-    const { error: upErr } = await supabase
-      .from("matches")
-      .update(update)
-      .eq("id", match.id);
-    if (upErr) {
-      console.error(`[cron] update failed for ${match.id}:`, upErr);
-      continue;
-    }
-    upserted += 1;
-    if (!wasFinished && willBeFinished) {
-      newlyFinished.push(match.id);
+    // 1. Pull fresh fixtures from api-football. Soft skip on rate limit / 5xx —
+    // we still fall through to scoring so any pending backlog drains.
+    const fixtures = await fetchFixtures({ host: apiHost, key: apiKey });
+    if (!fixtures) {
+      fetchSkipped =
+        "api-football returned null (rate limit, 5xx, or malformed)";
+    } else {
+      // 2. Upsert each match. We join by apifootball_fixture_id which the seed
+      // already populated for group matches; knockout fixtures don't exist in
+      // api-football until FIFA publishes, so they're ignored for now.
+      const { data: ourMatches, error: matchErr } = await supabase
+        .from("matches")
+        .select(
+          "id, round_id, apifootball_fixture_id, home_slot_id, away_slot_id, status",
+        )
+        .not("apifootball_fixture_id", "is", null);
+      if (matchErr) {
+        return { ok: false, stage: "match-lookup", reason: matchErr.message };
+      }
+      const matchByFixtureId = new Map<number, (typeof ourMatches)[number]>();
+      for (const m of ourMatches ?? []) {
+        matchByFixtureId.set(m.apifootball_fixture_id as number, m);
+      }
+
+      for (const fx of fixtures) {
+        const match = matchByFixtureId.get(fx.apifootball_fixture_id);
+        if (!match) continue; // unknown fixture — not in our seed
+
+        const update: Record<string, unknown> = {
+          id: match.id,
+          status: fx.status,
+          home_score: fx.home_score,
+          away_score: fx.away_score,
+          finished_at: fx.finished_at,
+        };
+
+        // Knockout: record which side advanced (single source of truth for
+        // scoring + bracket advancement). Group matches never set this.
+        // Regulation → higher 90+ET score's slot. Tie → penalty-shootout
+        // winner from api-football. Tie with no shootout data yet, or
+        // cancelled → leave null; a later tick settles it.
+        const isKnockout = !(match.round_id as string).startsWith("group-");
+        if (isKnockout && fx.status === "finished") {
+          update.winning_slot_id = resolveWinningSlot(fx, match);
+        }
+        const { error: upErr } = await supabase
+          .from("matches")
+          .update(update)
+          .eq("id", match.id);
+        if (upErr) {
+          console.error(`[cron] update failed for ${match.id}:`, upErr);
+          continue;
+        }
+        upserted += 1;
+      }
     }
   }
 
-  // 3. Score every match that's now in a terminal state. scoreMatch
-  // is idempotent so re-running on already-scored rows is fine.
-  // Iterate over ALL finished matches, not just newly-finished, so
-  // we catch any that the polling job missed on a previous tick
-  // (e.g., score wrote but scoring failed before the next loop iter).
-  const { data: finishedRows, error: finErr } = await supabase
-    .from("matches")
-    .select("id")
-    .in("status", ["finished", "cancelled"]);
-  if (finErr) {
-    return { ok: false, stage: "finished-lookup", reason: finErr.message };
+  // 3. Score matches that still need it — finished/cancelled rows with any
+  // unscored prediction — oldest first, capped (opts.scoreLimit). Re-derived
+  // AFTER the upsert so a match that just flipped to finished scores this tick.
+  // scoreMatch is idempotent; a failure is logged and retried next tick.
+  const work = await findMatchesNeedingScoring(supabase, opts.scoreLimit);
+  if (work.error) {
+    return { ok: false, stage: "needs-scoring-lookup", reason: work.error };
   }
   let scored = 0;
-  for (const m of finishedRows ?? []) {
-    const out = await scoreMatch(supabase, m.id as string);
+  for (const id of work.ids) {
+    const out = await scoreMatch(supabase, id);
     if (out.ok) {
       if (!out.skipped) scored += 1;
     } else {
-      console.error(`[cron] scoreMatch ${m.id} failed:`, out.reason);
+      console.error(`[cron] scoreMatch ${id} failed:`, out.reason);
     }
   }
 
@@ -238,10 +281,12 @@ async function runPipeline(
 
   return {
     ok: true,
+    fetched: opts.fetch,
+    ...(fetchSkipped ? { fetch_skipped: fetchSkipped } : {}),
     backfill,
     upserted,
     scored,
-    newly_finished: newlyFinished.length,
+    matches_needing_scoring: work.ids.length,
     reality: realityOutcome,
     knockout_reality: knockoutReality,
     finalists: finalistOutcome,
