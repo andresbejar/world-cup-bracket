@@ -1,22 +1,25 @@
-name: Poll match results
+name: Poll match results (backstop)
 
-# Sub-hourly trigger that hits the Next.js API route to fetch fresh results from
-# api-sports.io and run scoring on any matches that just finished.
+# SPARSE BACKSTOP — not the primary trigger.
 #
-# Why GitHub Actions instead of Vercel Cron:
-#   Vercel Hobby plan is capped at one cron run per day (verified APT-3,
-#   2026-05-09). Pro plan ($20/month) is overkill for a ~2-month hobby.
-#   GitHub Actions free tier covers ~2000 min/month; every-15-min runs of a
-#   <30s job use ~1440 min/month — still within free tier alongside the
-#   daily backup and PR-triggered Playwright runs.
+# Primary polling is an external every-5-min cron pinger (cron-job.org) that
+# hits POST /api/cron/poll-results; the route self-throttles, only calling
+# api-sports when a match is in its expected-end window (see APT-60 + the route
+# header). That delivers scores within ~5 min of the final whistle.
 #
-# Why every 15 min when we only need hourly:
-#   GitHub Actions scheduled workflows are best-effort — under load they're
-#   delayed and silently dropped, so a nominal `0 * * * *` was firing only
-#   ~every 4h in practice (APT, 2026-06). Two mitigations: (1) avoid :00, the
-#   most congested minute on all of GitHub, and (2) schedule 4x/hour so a few
-#   skipped runs still leave us comfortably under an hour between actual runs.
-#   Scoring is idempotent (see DESIGN/architecture), so over-polling is safe.
+# This workflow exists only as insurance and to run the non-result work that
+# isn't tied to a match ending — knockout-fixture-id backfill and reality/
+# finalist sweeps — on a steady cadence even between rounds. It calls the route
+# with ?full=1 to BYPASS the self-throttle and force a complete sweep (backfill
+# + re-score any stragglers + advance reality). Scoring is idempotent, so this
+# overlapping with the pinger is safe.
+#
+# Why GitHub Actions (not Vercel Cron): Vercel Hobby is capped at one cron run
+# per day (verified APT-3, 2026-05-09); Pro ($20/mo) is overkill for a hobby.
+# GitHub's *scheduled* workflows are best-effort — delayed/dropped under load
+# (a nominal `0 * * * *` fired only ~every 4h in practice, APT 2026-06), which
+# is exactly why the every-match-end timing now lives in the external pinger and
+# this is only a coarse safety net.
 #
 # Required GitHub secrets (set via: gh secret set <NAME>):
 #   CRON_SECRET      — shared secret the API route validates before running
@@ -26,10 +29,11 @@ name: Poll match results
 
 on:
   schedule:
-    # Every 15 min at off-peak minutes (UTC). Deliberately NOT :00 — the top of
-    # the hour is the most throttled slot. Offset minutes + 4x/hour cadence keeps
-    # the real interval under an hour even when GitHub drops some scheduled runs.
-    - cron: '7,22,37,52 * * * *'
+    # Every 3 hours at an off-peak minute (UTC, avoiding the congested :00).
+    # Coarse on purpose — the external pinger handles match-end timing; this
+    # just guarantees backfill/reality/straggler-scoring run between rounds even
+    # if the pinger is down.
+    - cron: '13 */3 * * *'
 
   # Manual trigger for testing or one-off catch-up runs after an outage.
   workflow_dispatch:
@@ -44,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Hit /api/cron/poll-results
+      - name: Hit /api/cron/poll-results?full=1 (force complete sweep)
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           PROD_URL: ${{ vars.PROD_URL }}
@@ -62,7 +66,7 @@ jobs:
             -X POST \
             -H "Authorization: Bearer $CRON_SECRET" \
             -H "Content-Type: application/json" \
-            "$PROD_URL/api/cron/poll-results")
+            "$PROD_URL/api/cron/poll-results?full=1")
 
           status=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')

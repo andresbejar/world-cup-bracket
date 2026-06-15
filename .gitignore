@@ -60,3 +60,5 @@ backups/
 
 # local dev-only helper script (machine-specific, not for commit)
 scripts/dev-login.ts
+.vercel
+.env*

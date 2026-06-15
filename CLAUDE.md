@@ -30,6 +30,42 @@ The full design doc lives at `designs/andresbejar-main-design-20260509-161531.md
 - **Scoring is idempotent** — running twice doesn't double-count points. Polling cron retries are safe.
 - **Hand-curated fixture seed**, not pulled from api-football. The API is results-only.
 
+## Score polling (APT-60)
+
+`POST /api/cron/poll-results` pulls results from api-sports and runs scoring. It's
+**self-throttling**: each call first checks whether any not-yet-finished match is
+in its expected-end window (`lib/poll-window.ts` `isInPollWindow` — kickoff+1h45m
+through a per-stage cap; group 2h15m, knockout 3h45m for ET+penalties). If none,
+it returns `{idle:true}` without touching api-football. We never poll the live
+phase — only the final result matters. `?full=1` bypasses the gate and forces a
+complete sweep (backfill + straggler scoring + reality advancement).
+
+**Execution model:** the fetch+score+reality sweep can take >30s, but the pinger
+caps each request at 30s. So on the pinger (non-`?full=1`) path the route runs the
+sweep in the background via `after()` and returns `202 {scheduled:true}`
+immediately — the work finishes server-side (`maxDuration = 60`). It's idempotent,
+so a dropped background run self-heals next tick. **Pipeline errors are NOT visible
+to the pinger** on this path (it already got 202); they surface in Vercel logs and
+on the synchronous `?full=1` backstop, which returns real counts / 500s on failure.
+
+Two triggers, by design:
+
+- **Primary — external pinger (cron-job.org).** Always-on, hits the endpoint
+  every 5 min, 24/7. Because the endpoint self-throttles, idle ticks cost ~zero
+  api-football quota; during a match window each tick is one fetch, so scores land
+  within ~5 min of the final whistle. This replaces per-match GitHub scheduling,
+  which was unreliable (GitHub drops scheduled runs under load). One api-sports
+  free-tier request per active tick keeps daily usage well under the ~100/day cap.
+
+  Configure in the cron-job.org dashboard (config lives outside git):
+  - URL: `https://<PROD_URL>/api/cron/poll-results`  · Method: `POST`
+  - Header: `Authorization: Bearer <CRON_SECRET>` (same secret the route validates)
+  - Interval: every 5 minutes
+
+- **Backstop — `.github/workflows/poll-results.yml`.** Coarse (every 3h) GitHub
+  Actions run that calls the endpoint with `?full=1`. Insurance if the pinger is
+  down, and the steady cadence that runs backfill/reality between rounds.
+
 ## Skill routing
 
 When the user's request matches an available skill, ALWAYS invoke it using the Skill tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
