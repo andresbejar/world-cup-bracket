@@ -1,8 +1,10 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { TopBar } from "@/app/_components/top-bar";
 import { isAdminUserId } from "@/lib/auth-guard";
 import { ProfileForm } from "./profile-form";
+import { CalendarSubscribe } from "./calendar-subscribe";
 
 export const metadata = { title: "Profile — World Cup Bracket" };
 
@@ -24,6 +26,14 @@ export default async function ProfilePage() {
   const points = profile?.total_points ?? 0;
   const banned = profile?.is_banned ?? false;
   const isAdmin = isAdminUserId(user.id);
+
+  // Derive the public host server-side (avoids a client hydration mismatch
+  // from window.location) to build the calendar subscription links.
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+  const calendarPath = "/api/calendar/world-cup.ics";
+  const httpsUrl = `https://${host}${calendarPath}`;
+  const webcalUrl = `webcal://${host}${calendarPath}`;
 
   return (
     <div className="min-h-[100svh]">
@@ -54,6 +64,29 @@ export default async function ProfilePage() {
             email={user.email ?? ""}
             banned={banned}
           />
+        </section>
+
+        <section
+          aria-label="Match reminders"
+          className="mt-6 rounded-md border border-border bg-surface p-6"
+        >
+          <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-muted">
+            REMINDERS
+          </p>
+          <h2
+            className="mt-1 font-display text-xl leading-tight tracking-tight"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
+            Match reminders
+          </h2>
+          <p className="mt-2 text-sm text-text-dim">
+            Add the match calendar to your phone to get a notification 30
+            minutes before every match kicks off — also your last chance to lock
+            in a prediction.
+          </p>
+          <div className="mt-4">
+            <CalendarSubscribe webcalUrl={webcalUrl} httpsUrl={httpsUrl} />
+          </div>
         </section>
 
         {isAdmin ? (
