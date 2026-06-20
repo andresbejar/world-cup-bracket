@@ -41,7 +41,6 @@ export default async function PredictionsPage() {
         groupMatches={workspace.groupMatches}
         knockoutMatches={workspace.knockoutMatches}
         initialPredictions={workspace.predictions}
-        initialQualifyingThirdGroups={workspace.qualifyingThirdGroups}
         initialFinalistPicks={workspace.finalistPicks}
         slotLabelById={workspace.slotLabelById}
         realTeamIdBySlotLabel={workspace.realTeamIdBySlotLabel}

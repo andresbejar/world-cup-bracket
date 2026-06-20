@@ -13,10 +13,12 @@
 
 import {
   computeGroupStandings,
+  deriveBestThirdGroups,
   GROUP_LETTERS,
   THIRD_PLACE_WINNER_GROUPS,
   type GroupLetter,
   type GroupStanding,
+  type GroupStandings,
   type MatchScore,
   type Team,
 } from "./bracket";
@@ -364,4 +366,111 @@ export async function populateRealBestThirdSlots(
     return { ok: false, reason: `slot upsert: ${upsertErr.message}` };
   }
   return { ok: true, written: writes.length };
+}
+
+/** Parse the REAL_QUALIFYING_THIRDS override ("A,B,D,E,G,I,K,L"). Returns
+ * null when unset/blank; an error string when set but not exactly 8 distinct
+ * A-L letters. Exported for unit testing — it's the operator's only guard
+ * against a malformed override silently mis-seeding the real qualifying set. */
+export function parseQualifyingThirdsOverride(
+  raw: string | undefined,
+): { groups: GroupLetter[] } | { error: string } | null {
+  if (raw == null || raw.trim() === "") return null;
+  const letters = raw
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => s.length > 0);
+  const distinct = new Set(letters);
+  const allValid = letters.every((l) =>
+    (GROUP_LETTERS as readonly string[]).includes(l),
+  );
+  if (letters.length !== 8 || distinct.size !== 8 || !allValid) {
+    return {
+      error: `REAL_QUALIFYING_THIRDS must be exactly 8 distinct group letters A-L, got "${raw}"`,
+    };
+  }
+  return { groups: letters as GroupLetter[] };
+}
+
+export type RealThirdsResolution =
+  | { ok: true; source: "override" | "derived"; groups: GroupLetter[] }
+  | { ok: true; pending: string }
+  | { ok: false; reason: string };
+
+/**
+ * Resolve which 8 groups' third-placed teams qualify, WITHOUT writing
+ * anything. The `REAL_QUALIFYING_THIRDS` env override ("A,B,D,...") wins
+ * when set; otherwise the set is auto-derived from real group standings
+ * (points → GD → goals for, via deriveBestThirdGroups). Returns a
+ * `pending` outcome (not an error) when the group stage isn't fully
+ * finished, or when the 8th/9th thirds are a true tie that FIFA breaks
+ * with disciplinary record / drawing of lots (unsimulatable) and no
+ * override is set — the caller should hold and surface that an override is
+ * needed. Shared by the cron driver and scripts/preview-real-thirds.ts.
+ */
+export async function resolveRealQualifyingThirds(
+  supabase: SupabaseClient,
+): Promise<RealThirdsResolution> {
+  const override = parseQualifyingThirdsOverride(
+    process.env.REAL_QUALIFYING_THIRDS,
+  );
+  if (override && "error" in override) {
+    return { ok: false, reason: override.error };
+  }
+  if (override) {
+    return { ok: true, source: "override", groups: override.groups };
+  }
+
+  const loaded = await loadRealStandingsByGroup(supabase);
+  if (loaded.ok === false) return loaded;
+  if (loaded.standings === null) {
+    return { ok: true, pending: loaded.skipped };
+  }
+
+  const groupStandings: GroupStandings[] = GROUP_LETTERS.map((letter) => ({
+    group_letter: letter,
+    standings: loaded.standings.get(letter) ?? [],
+  }));
+  const derived = deriveBestThirdGroups(groupStandings);
+  if (derived.boundaryTie) {
+    // Group stage IS finished but the 8th/9th thirds tie on points/GD/GF —
+    // FIFA breaks this by disciplinary record / drawing of lots, which we
+    // can't simulate. We hold (return pending) rather than guess. This is a
+    // silent-stall risk: the 8 best-3rd R32 branches won't advance until an
+    // operator sets REAL_QUALIFYING_THIRDS, so log loudly (lands in Vercel
+    // logs) instead of only burying it in the cron's 200 response body.
+    console.error(
+      "[reality] best-third boundary tie — 8 R32 branches will NOT advance until REAL_QUALIFYING_THIRDS is set in prod env. Run scripts/preview-real-thirds.ts.",
+    );
+    return {
+      ok: true,
+      pending:
+        "8th/9th best third-placed teams tied on points/GD/GF — set REAL_QUALIFYING_THIRDS to resolve",
+    };
+  }
+  if (derived.groups.length !== 8) {
+    return {
+      ok: true,
+      pending: `only ${derived.groups.length} third-placed teams ranked — group stage not fully settled`,
+    };
+  }
+  return { ok: true, source: "derived", groups: derived.groups };
+}
+
+/**
+ * Determine the 8 real qualifying third-placed groups and populate their
+ * R32 slots — the automatic driver invoked by the polling cron. Delegates
+ * the decision to resolveRealQualifyingThirds (override → auto-derive →
+ * hold on tie/unsettled), then the Annex-C placement + upsert to
+ * populateRealBestThirdSlots. Bails (skipped) until settled. Idempotent.
+ */
+export async function populateRealBestThirdSlotsAuto(
+  supabase: SupabaseClient,
+): Promise<PopulateOutcome> {
+  const resolved = await resolveRealQualifyingThirds(supabase);
+  if (resolved.ok === false) return resolved;
+  if ("pending" in resolved) {
+    return { ok: true, written: 0, skipped: resolved.pending };
+  }
+  return populateRealBestThirdSlots(supabase, resolved.groups);
 }
