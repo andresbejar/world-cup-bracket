@@ -26,6 +26,30 @@ export function hasRealResult(
 }
 
 /**
+ * Whether a match has *started* — i.e. its predictions may be revealed to
+ * other players (APT-62). A match starts the moment its kickoff passes, or
+ * once the result feed reports it `in_progress`/`finished`.
+ *
+ * Deliberately distinct from the per-match *lock* (`checkMatchLock`): a lock
+ * can also fire on an admin round hard-lock, which may precede kickoff. We must
+ * never reveal picks for a match that hasn't kicked off, so this keys strictly
+ * on kickoff/live-status and ignores admin locks. `cancelled` matches never
+ * start. This is the server-side reveal gate as well as the CTA visibility
+ * check, so keep it pure.
+ *
+ * `now` is injectable for deterministic tests; defaults to wall-clock.
+ */
+export function hasMatchStarted(
+  m: { status: MatchStatus; scheduled_at: string },
+  now: number = Date.now(),
+): boolean {
+  if (m.status === "cancelled") return false;
+  if (m.status === "in_progress" || m.status === "finished") return true;
+  const kickoffMs = new Date(m.scheduled_at).getTime();
+  return Number.isFinite(kickoffMs) && now >= kickoffMs;
+}
+
+/**
  * Compact "Jun 28, 12:00 PM PDT" rendering of a kickoff timestamp.
  *
  * Kickoffs are stored in UTC; this renders them in the viewer's local zone

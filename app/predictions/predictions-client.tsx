@@ -15,6 +15,7 @@ import { BracketSidebar } from "./bracket-sidebar";
 import { ThirdPlaceCluster, type ThirdPlaceRow } from "./third-place-cluster";
 import { PredictedVsRealCard } from "./predicted-vs-real-card";
 import { PodiumBanner } from "./podium-banner";
+import { OtherPicksButton } from "./other-picks-modal";
 import {
   FinalistPicks,
   type FinalistPicksState,
@@ -35,7 +36,7 @@ import {
   type MatchScore,
   type Team,
 } from "@/lib/bracket";
-import { hasRealResult } from "@/lib/match-display";
+import { hasMatchStarted, hasRealResult } from "@/lib/match-display";
 import { checkMatchLock, checkRoundLock } from "@/lib/lock-check";
 import type {
   HydratedFinalistPicks,
@@ -821,6 +822,15 @@ export function PredictionsClient({
                             state,
                             actualWinningSlotId,
                           )}
+                          footer={
+                            <OtherPicksButton
+                              matchId={match.id}
+                              homeCode={homeCode}
+                              awayCode={awayCode}
+                              homeSlotId={match.home_slot_id}
+                              awaySlotId={match.away_slot_id}
+                            />
+                          }
                         />
                       );
                     }
@@ -844,6 +854,21 @@ export function PredictionsClient({
                         saveStatus={saveStatus.get(match.id) ?? "idle"}
                         locked={isMatchLocked(match.scheduled_at)}
                         lockHint={formatLockHint(match.scheduled_at, now)}
+                        footer={
+                          hasMatchStarted(match, now) ? (
+                            <OtherPicksButton
+                              matchId={match.id}
+                              homeCode={
+                                teamCodeAtLabel(match.home_slot_label) ?? "—"
+                              }
+                              awayCode={
+                                teamCodeAtLabel(match.away_slot_label) ?? "—"
+                              }
+                              homeSlotId={match.home_slot_id}
+                              awaySlotId={match.away_slot_id}
+                            />
+                          ) : null
+                        }
                         onChange={(home, away, winner) =>
                           writeKnockoutPrediction(match.id, {
                             home,
@@ -899,6 +924,15 @@ export function PredictionsClient({
                                 winnerCode: null,
                               }}
                               pointsAwarded={scoreGroupPoints(match, score)}
+                              footer={
+                                <OtherPicksButton
+                                  matchId={match.id}
+                                  homeCode={match.home.code}
+                                  awayCode={match.away.code}
+                                  homeSlotId={match.home_slot_id}
+                                  awaySlotId={match.away_slot_id}
+                                />
+                              }
                             />
                           );
                         }
@@ -912,6 +946,17 @@ export function PredictionsClient({
                             saveStatus={saveStatus.get(match.id) ?? "idle"}
                             locked={isMatchLocked(match.scheduled_at)}
                             lockHint={formatLockHint(match.scheduled_at, now)}
+                            footer={
+                              hasMatchStarted(match, now) ? (
+                                <OtherPicksButton
+                                  matchId={match.id}
+                                  homeCode={match.home.code}
+                                  awayCode={match.away.code}
+                                  homeSlotId={match.home_slot_id}
+                                  awaySlotId={match.away_slot_id}
+                                />
+                              ) : null
+                            }
                             onChange={(h, a) =>
                               writePrediction(match.id, {
                                 home: h,

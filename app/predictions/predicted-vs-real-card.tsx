@@ -37,6 +37,8 @@ interface Props {
    * 0 (wrong), or null when there's no prediction to score.
    */
   pointsAwarded: number | null;
+  /** Optional footer slot (e.g. the "view everyone's picks" CTA). */
+  footer?: ReactNode;
 }
 
 export function PredictedVsRealCard({
@@ -46,6 +48,7 @@ export function PredictedVsRealCard({
   predicted,
   actual,
   pointsAwarded,
+  footer,
 }: Props) {
   const severity = severityOf(pointsAwarded);
 
@@ -92,7 +95,8 @@ export function PredictedVsRealCard({
         />
       </div>
 
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {footer ?? <span />}
         <PointsBadge pointsAwarded={pointsAwarded} severity={severity} />
       </div>
     </article>
