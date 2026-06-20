@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ScoreInput } from "./score-input";
 import { shortDateTime } from "@/lib/match-display";
 import type { HydratedMatch } from "@/lib/group-data";
@@ -24,6 +24,8 @@ interface Props {
   locked: boolean;
   /** "LOCKS IN …" countdown to this match's kickoff; null once locked. */
   lockHint: string | null;
+  /** Optional footer slot (e.g. the "view everyone's picks" CTA once started). */
+  footer?: ReactNode;
   onChange: (homeScore: number, awayScore: number) => void;
 }
 
@@ -35,6 +37,7 @@ export function MatchCard({
   saveStatus,
   locked,
   lockHint,
+  footer,
   onChange,
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -92,6 +95,12 @@ export function MatchCard({
           />
         </div>
       </div>
+
+      {footer ? (
+        <div className="flex justify-end border-t border-border/60 pt-2.5">
+          {footer}
+        </div>
+      ) : null}
     </article>
   );
 }
