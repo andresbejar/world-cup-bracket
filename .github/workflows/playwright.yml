@@ -80,9 +80,9 @@ jobs:
       E2E_USER_SUFFIX: ${{ matrix.browser }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Node 22 (LTS) has native WebSocket; @supabase/supabase-js refuses
           # to start on Node 20 without a polyfill ("Node.js 20 detected
