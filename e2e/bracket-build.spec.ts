@@ -170,9 +170,10 @@ test.describe("bracket build", () => {
     // Switch to the bracket sidebar standings tab and verify all groups
     // are populated (every team has played = 3 matches).
     await page.getByRole("tab", { name: /Standings/i }).click();
-    // The header shows "X/36 REAL" — with no real matches finished, the
-    // count is 0/36 but standings tables fill from predictions.
-    await expect(page.getByText(/0\/36 REAL/)).toBeVisible();
+    // With no real matches finished, the standings default to the PREDICTED
+    // source (APT-61), whose tables fill from the user's picks. The eyebrow
+    // reflects the source; the meta reads "PROJECTED" rather than a REAL count.
+    await expect(page.getByText("GROUP STAGE · PREDICTED")).toBeVisible();
     // Each group's first-rank row should be visible (12 groups). Grab
     // the "01" rank cells inside the standings tables; should be 12.
     const rank1Cells = page.locator("td", { hasText: /^1$/ });

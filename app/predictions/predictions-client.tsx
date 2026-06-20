@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -46,6 +47,64 @@ import type {
 } from "@/lib/group-data";
 
 const SAVE_DEBOUNCE_MS = 500;
+
+// Run computeGroupStandings for all 12 groups given a per-group score map.
+// Shared by the blended, predicted-only, and real-only standings memos.
+function buildStandings(
+  scoresByGroup: ReadonlyMap<string, MatchScore[]>,
+  groupTeams: readonly HydratedTeam[],
+): GroupStandings[] {
+  const teamsByGroup = new Map<string, Team[]>();
+  for (const letter of GROUP_LETTERS) teamsByGroup.set(letter, []);
+  for (const t of groupTeams) {
+    teamsByGroup.get(t.group_letter)?.push({
+      id: t.id,
+      group_letter: t.group_letter,
+    });
+  }
+  return GROUP_LETTERS.map((letter) => ({
+    group_letter: letter,
+    standings: computeGroupStandings(
+      scoresByGroup.get(letter) ?? [],
+      teamsByGroup.get(letter) ?? [],
+    ),
+  }));
+}
+
+// Bucket group-match scores by group_letter, sourcing each match's score via a
+// caller-supplied selector (real-only, predicted-only, or blended). Matches the
+// selector returns null for are skipped — that's what produces partial real
+// standings before all matches are played. Feeds buildStandings.
+function fillScoresByGroup(
+  groupMatches: readonly HydratedMatch[],
+  selectScore: (m: HydratedMatch) => { home: number; away: number } | null,
+): Map<string, MatchScore[]> {
+  const scoresByGroup = new Map<string, MatchScore[]>();
+  for (const letter of GROUP_LETTERS) scoresByGroup.set(letter, []);
+  for (const m of groupMatches) {
+    const bucket = scoresByGroup.get(m.home.group_letter);
+    if (!bucket) continue;
+    const score = selectScore(m);
+    if (!score) continue;
+    bucket.push({
+      home_team_id: m.home.id,
+      away_team_id: m.away.id,
+      home_score: score.home,
+      away_score: score.away,
+    });
+  }
+  return scoresByGroup;
+}
+
+// The real 90'+ET score for a finished group match, or null if it hasn't been
+// played (or scores aren't populated yet). hasRealResult guards against
+// phantom future-dated finishes.
+function realScore(m: HydratedMatch): { home: number; away: number } | null {
+  if (!hasRealResult(m) || m.home_score == null || m.away_score == null) {
+    return null;
+  }
+  return { home: m.home_score, away: m.away_score };
+}
 
 interface Props {
   rounds: HydratedRound[];
@@ -282,53 +341,37 @@ export function PredictionsClient({
   // standings table morphs from "your prediction" to reality without the
   // user touching their picks. Pure swap — the slot-ID premise from the
   // design doc means downstream cascade still works either way.
-  const standingsByGroup = useMemo<GroupStandings[]>(() => {
-    const scoresByGroup = new Map<string, MatchScore[]>();
-    for (const letter of GROUP_LETTERS) scoresByGroup.set(letter, []);
-    for (const m of groupMatches) {
-      const bucket = scoresByGroup.get(m.home.group_letter);
-      if (!bucket) continue;
-      const useReal =
-        hasRealResult(m) &&
-        m.home_score != null &&
-        m.away_score != null;
-      if (useReal) {
-        bucket.push({
-          home_team_id: m.home.id,
-          away_team_id: m.away.id,
-          home_score: m.home_score!,
-          away_score: m.away_score!,
-        });
-        continue;
-      }
+  const predictedScore = useCallback(
+    (m: HydratedMatch): { home: number; away: number } | null => {
       const pred = predictions.get(m.id);
-      if (!pred) continue;
-      bucket.push({
-        home_team_id: m.home.id,
-        away_team_id: m.away.id,
-        home_score: pred.home,
-        away_score: pred.away,
-      });
-    }
-    const teamsByGroup = new Map<string, Team[]>();
-    for (const letter of GROUP_LETTERS) teamsByGroup.set(letter, []);
-    for (const t of groupTeams) {
-      teamsByGroup.get(t.group_letter)?.push({
-        id: t.id,
-        group_letter: t.group_letter,
-      });
-    }
-    const result: GroupStandings[] = [];
-    for (const letter of GROUP_LETTERS) {
-      const teams = teamsByGroup.get(letter) ?? [];
-      const scores = scoresByGroup.get(letter) ?? [];
-      result.push({
-        group_letter: letter,
-        standings: computeGroupStandings(scores, teams),
-      });
-    }
-    return result;
-  }, [groupTeams, groupMatches, predictions]);
+      return pred ? { home: pred.home, away: pred.away } : null;
+    },
+    [predictions],
+  );
+
+  const standingsByGroup = useMemo<GroupStandings[]>(
+    () =>
+      buildStandings(
+        fillScoresByGroup(groupMatches, (m) => realScore(m) ?? predictedScore(m)),
+        groupTeams,
+      ),
+    [groupTeams, groupMatches, predictedScore],
+  );
+
+  // APT-61 — pure view variants for the sidebar predicted/real toggle.
+  // standingsByGroup (above) stays *blended* (real where finished, else
+  // predicted) and still feeds thirdPlaceRows + the editing column. These
+  // two are display-only: one ignores reality entirely, the other ignores
+  // predictions entirely.
+  const standingsByGroupPredicted = useMemo<GroupStandings[]>(
+    () => buildStandings(fillScoresByGroup(groupMatches, predictedScore), groupTeams),
+    [groupTeams, groupMatches, predictedScore],
+  );
+
+  const standingsByGroupReal = useMemo<GroupStandings[]>(
+    () => buildStandings(fillScoresByGroup(groupMatches, realScore), groupTeams),
+    [groupTeams, groupMatches],
+  );
 
   // Per-group reality indicator for the standings sidebar: how many of
   // each group's 3 matches have finished. Drives the "REAL / PREDICTED"
@@ -468,6 +511,32 @@ export function PredictionsClient({
     knockoutPreds,
     realTeamIdBySlotLabel,
   ]);
+
+  // APT-61 — pure view variants for the sidebar predicted/real toggle.
+  //   - bracketSlotMapPredicted: the user's full bracket, R32 inputs from
+  //     their *predicted* standings (not the blend) cascaded by their
+  //     winner picks. No reality overlay.
+  //   - bracketSlotMapReal: reality only — exactly the slots the cron has
+  //     filled (real group results, FIFA best-thirds, real advancers).
+  //     Unsettled labels are absent → the sidebar renders them as "—".
+  const bracketSlotMapPredicted = useMemo<Map<string, string | null>>(() => {
+    let r32Slots;
+    try {
+      r32Slots = populateR32Slots(
+        standingsByGroupPredicted,
+        qualifyingGroupsArray,
+      );
+    } catch (e) {
+      console.error("[predictions] populateR32Slots failed:", e);
+      r32Slots = populateR32Slots(standingsByGroupPredicted, []);
+    }
+    return computeKnockoutCascade(r32Slots, knockoutPreds);
+  }, [standingsByGroupPredicted, qualifyingGroupsArray, knockoutPreds]);
+
+  const bracketSlotMapReal = useMemo<Map<string, string | null>>(
+    () => new Map(Object.entries(realTeamIdBySlotLabel)),
+    [realTeamIdBySlotLabel],
+  );
 
   const teamCodeById = useMemo(
     () => new Map(groupTeams.map((t) => [t.id, t.code])),
@@ -864,13 +933,21 @@ export function PredictionsClient({
             aria-label="Bracket tree"
             className="xl:sticky xl:top-8 xl:self-start"
           >
-            <BracketSidebar
-              standingsByGroup={standingsByGroup}
-              realMatchCountByGroup={realMatchCountByGroup}
-              slotMap={slotMap}
-              teamCodeById={teamCodeById}
-              activeRound={activeRound}
-            />
+            {/* Suspense boundary scopes BracketSidebar's useSearchParams()
+                read: /predictions is auth-dynamic today so it never bails to
+                CSR, but the boundary keeps the build robust if the route is
+                ever made static. */}
+            <Suspense fallback={null}>
+              <BracketSidebar
+                standingsByGroupPredicted={standingsByGroupPredicted}
+                standingsByGroupReal={standingsByGroupReal}
+                realMatchCountByGroup={realMatchCountByGroup}
+                bracketSlotMapPredicted={bracketSlotMapPredicted}
+                bracketSlotMapReal={bracketSlotMapReal}
+                teamCodeById={teamCodeById}
+                activeRound={activeRound}
+              />
+            </Suspense>
           </aside>
         </div>
       </main>
