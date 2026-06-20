@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ScoreInput } from "./score-input";
 import { shortDateTime } from "@/lib/match-display";
 import type { HydratedKnockoutMatch } from "@/lib/group-data";
@@ -43,6 +43,8 @@ interface Props {
   locked: boolean;
   /** "LOCKS IN …" countdown to this match's kickoff; null once locked. */
   lockHint: string | null;
+  /** Optional footer slot (e.g. the "view everyone's picks" CTA once started). */
+  footer?: ReactNode;
   onChange: (
     homeScore: number,
     awayScore: number,
@@ -64,6 +66,7 @@ export function KnockoutCard({
   saveStatus,
   locked,
   lockHint,
+  footer,
   onChange,
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -182,6 +185,12 @@ export function KnockoutCard({
         <p className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
           Pick winners in earlier rounds to unlock this match.
         </p>
+      ) : null}
+
+      {footer ? (
+        <div className="flex justify-end border-t border-border/60 pt-2.5">
+          {footer}
+        </div>
       ) : null}
     </article>
   );
