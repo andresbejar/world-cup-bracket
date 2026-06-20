@@ -174,7 +174,7 @@ test.describe("bracket build", () => {
     // Switch to bracket view and confirm R32 slots have real team codes
     // (not "—"). With every home team winning their group, the 12
     // winner-A..L slots should all be filled. The 8 best-3rd-vs slots
-    // fill via Annex C from our qualifying-set selection above.
+    // fill via Annex C from the auto-derived top-8 thirds (no manual pick).
     await page.getByRole("tab", { name: /Bracket/i }).click();
     const r32Dashes = page.locator("svg text", { hasText: /^—$/ });
     // R16/QF/SF/F slots populate via cascade off knockout predictions.

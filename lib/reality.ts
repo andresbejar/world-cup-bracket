@@ -370,8 +370,9 @@ export async function populateRealBestThirdSlots(
 
 /** Parse the REAL_QUALIFYING_THIRDS override ("A,B,D,E,G,I,K,L"). Returns
  * null when unset/blank; an error string when set but not exactly 8 distinct
- * A-L letters. */
-function parseQualifyingThirdsOverride(
+ * A-L letters. Exported for unit testing — it's the operator's only guard
+ * against a malformed override silently mis-seeding the real qualifying set. */
+export function parseQualifyingThirdsOverride(
   raw: string | undefined,
 ): { groups: GroupLetter[] } | { error: string } | null {
   if (raw == null || raw.trim() === "") return null;
@@ -432,6 +433,15 @@ export async function resolveRealQualifyingThirds(
   }));
   const derived = deriveBestThirdGroups(groupStandings);
   if (derived.boundaryTie) {
+    // Group stage IS finished but the 8th/9th thirds tie on points/GD/GF —
+    // FIFA breaks this by disciplinary record / drawing of lots, which we
+    // can't simulate. We hold (return pending) rather than guess. This is a
+    // silent-stall risk: the 8 best-3rd R32 branches won't advance until an
+    // operator sets REAL_QUALIFYING_THIRDS, so log loudly (lands in Vercel
+    // logs) instead of only burying it in the cron's 200 response body.
+    console.error(
+      "[reality] best-third boundary tie — 8 R32 branches will NOT advance until REAL_QUALIFYING_THIRDS is set in prod env. Run scripts/preview-real-thirds.ts.",
+    );
     return {
       ok: true,
       pending:

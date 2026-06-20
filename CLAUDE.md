@@ -53,7 +53,10 @@ had finished and the answer was public — a free-points leak. Now:
 - **`REAL_QUALIFYING_THIRDS` override** (Vercel prod env, e.g. `"A,B,D,E,G,I,K,L"`):
   set this **only** when the 8th/9th best thirds are a true tie that FIFA breaks by
   disciplinary record / drawing of lots (which we can't simulate). On such a tie with
-  no override, the cron holds and logs that an override is needed rather than guessing.
+  no override, the cron holds and guesses nothing. **Watch-for:** on such a tie it logs
+  `[reality] best-third boundary tie` (Vercel logs) — the 8 best-3rd R32 branches will NOT
+  advance (finalist scoring on them stalls) until an operator sets the override. The cron
+  still returns 200 so health checks stay green; this log line is the only signal.
   Empty/unset = pure auto-derive. Preview with `npx tsx scripts/preview-real-thirds.ts`
   (read-only dry-run). After deploy, `npx tsx scripts/recompute-totals.ts` flushes any
   stale total (hygiene; normally a no-op since the real set was never settled).

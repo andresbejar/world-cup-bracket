@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeKnockoutAdvancement,
+  parseQualifyingThirdsOverride,
   type KnockoutMatchRow,
 } from "./reality";
 import { ALL_KNOCKOUT_MATCHES, R32_MATCHES } from "./bracket-structure";
@@ -114,5 +115,37 @@ describe("computeKnockoutAdvancement", () => {
     const merged = new Map([...r32Inputs(), ...first]);
     const second = computeKnockoutAdvancement(rows, merged);
     expect([...second.entries()].sort()).toEqual([...first.entries()].sort());
+  });
+});
+
+// The operator's only guard against a malformed REAL_QUALIFYING_THIRDS env
+// override silently mis-seeding the real qualifying set mid-tournament.
+describe("parseQualifyingThirdsOverride", () => {
+  it("returns null when unset or blank", () => {
+    expect(parseQualifyingThirdsOverride(undefined)).toBeNull();
+    expect(parseQualifyingThirdsOverride("")).toBeNull();
+    expect(parseQualifyingThirdsOverride("   ")).toBeNull();
+  });
+
+  it("parses 8 distinct letters, trimming and upper-casing", () => {
+    expect(parseQualifyingThirdsOverride("A,B,D,E,G,I,K,L")).toEqual({
+      groups: ["A", "B", "D", "E", "G", "I", "K", "L"],
+    });
+    expect(parseQualifyingThirdsOverride(" a , b , d , e , g , i , k , l "))
+      .toEqual({ groups: ["A", "B", "D", "E", "G", "I", "K", "L"] });
+  });
+
+  it("errors on the wrong count (too few or too many)", () => {
+    expect(parseQualifyingThirdsOverride("A,B,D,E,G,I,K")).toHaveProperty("error");
+    expect(parseQualifyingThirdsOverride("A,B,C,D,E,F,G,H,I")).toHaveProperty("error");
+  });
+
+  it("errors on duplicate letters even when the count is 8", () => {
+    expect(parseQualifyingThirdsOverride("A,A,B,D,E,G,I,K")).toHaveProperty("error");
+  });
+
+  it("errors on an out-of-range letter (not A-L)", () => {
+    expect(parseQualifyingThirdsOverride("A,B,D,E,G,I,K,M")).toHaveProperty("error");
+    expect(parseQualifyingThirdsOverride("A,B,D,E,G,I,K,1")).toHaveProperty("error");
   });
 });
