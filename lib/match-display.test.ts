@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hasRealResult, shortDateTime } from "./match-display";
+import { hasMatchStarted, hasRealResult, shortDateTime } from "./match-display";
 
 // Kickoff fixed at noon UTC on FIFA 2026 opening day. "now" is injected so
 // every branch is deterministic.
@@ -42,6 +42,50 @@ describe("hasRealResult", () => {
   it("false for a cancelled match even after the scheduled time", () => {
     expect(
       hasRealResult({ status: "cancelled", scheduled_at: KICKOFF }, KICKOFF_MS + 1),
+    ).toBe(false);
+  });
+});
+
+describe("hasMatchStarted", () => {
+  it("false for a scheduled match before kickoff", () => {
+    expect(
+      hasMatchStarted({ status: "scheduled", scheduled_at: KICKOFF }, KICKOFF_MS - 1),
+    ).toBe(false);
+  });
+
+  it("true for a scheduled match once kickoff has passed (soft start)", () => {
+    expect(
+      hasMatchStarted({ status: "scheduled", scheduled_at: KICKOFF }, KICKOFF_MS + 1),
+    ).toBe(true);
+  });
+
+  it("true at the exact kickoff boundary (>= now)", () => {
+    expect(
+      hasMatchStarted({ status: "scheduled", scheduled_at: KICKOFF }, KICKOFF_MS),
+    ).toBe(true);
+  });
+
+  it("true for an in_progress match (live status wins regardless of clock)", () => {
+    expect(
+      hasMatchStarted({ status: "in_progress", scheduled_at: KICKOFF }, KICKOFF_MS - 60_000),
+    ).toBe(true);
+  });
+
+  it("true for a finished match", () => {
+    expect(
+      hasMatchStarted({ status: "finished", scheduled_at: KICKOFF }, KICKOFF_MS + 1),
+    ).toBe(true);
+  });
+
+  it("false for a cancelled match even after the scheduled time", () => {
+    expect(
+      hasMatchStarted({ status: "cancelled", scheduled_at: KICKOFF }, KICKOFF_MS + 1),
+    ).toBe(false);
+  });
+
+  it("false for an unparseable kickoff timestamp on a scheduled match", () => {
+    expect(
+      hasMatchStarted({ status: "scheduled", scheduled_at: "not-a-date" }, KICKOFF_MS),
     ).toBe(false);
   });
 });
