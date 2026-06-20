@@ -8,6 +8,15 @@ import { TEST_USER_EMAIL } from "./global-setup";
 // would: landing on the predictions workspace, filling a score, leaving
 // the page, and coming back to find it still there.
 
+// Kickoffs we pushed into the future so the first-match prediction write is
+// accepted, restored verbatim in afterAll. The suite predates the live
+// tournament and the per-match lock (lib/lock-check.ts checkMatchLock) now
+// rejects writes to any match whose kickoff has passed; this spec clicks the
+// first active-round match's increment, so we re-open every already-passed
+// match to guarantee that first match is editable. Same pattern as
+// bracket-build.spec.ts.
+const restoredKickoffs: { id: string; scheduled_at: string }[] = [];
+
 test.describe("signup + first prediction", () => {
   test.beforeAll(async () => {
     // Clean slate: other specs (bracket-build, round-lock) seed
@@ -20,6 +29,45 @@ test.describe("signup + first prediction", () => {
     const user = list.data.users.find((u) => u.email === TEST_USER_EMAIL);
     if (!user) throw new Error("test user missing — global-setup ran?");
     await admin.from("predictions").delete().eq("user_id", user.id);
+
+    // Re-open every match real wall-clock has already passed, so the
+    // first-match prediction write is accepted. Snapshot first; afterAll
+    // restores the original kickoffs.
+    const nowIso = new Date().toISOString();
+    const { data: past, error: pastErr } = await admin
+      .from("matches")
+      .select("id, scheduled_at")
+      .lte("scheduled_at", nowIso);
+    if (pastErr) throw pastErr;
+    for (const m of past ?? []) {
+      restoredKickoffs.push({
+        id: m.id as string,
+        scheduled_at: m.scheduled_at as string,
+      });
+    }
+    if (restoredKickoffs.length > 0) {
+      const future = new Date(
+        Date.now() + 60 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      await admin
+        .from("matches")
+        .update({ scheduled_at: future })
+        .in(
+          "id",
+          restoredKickoffs.map((m) => m.id),
+        );
+    }
+  });
+
+  test.afterAll(async () => {
+    const admin = adminClient();
+    for (const snap of restoredKickoffs) {
+      await admin
+        .from("matches")
+        .update({ scheduled_at: snap.scheduled_at })
+        .eq("id", snap.id);
+    }
+    restoredKickoffs.length = 0;
   });
 
   test("authenticated user lands on /predictions", async ({ page }) => {
