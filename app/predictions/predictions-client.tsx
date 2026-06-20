@@ -15,6 +15,7 @@ import { BracketSidebar } from "./bracket-sidebar";
 import { ThirdPlaceCluster, type ThirdPlaceRow } from "./third-place-cluster";
 import { PredictedVsRealCard } from "./predicted-vs-real-card";
 import { PodiumBanner } from "./podium-banner";
+import { OtherPicksButton } from "./other-picks-modal";
 import {
   FinalistPicks,
   type FinalistPicksState,
@@ -23,6 +24,7 @@ import {
   computeGroupStandings,
   computeKnockoutCascade,
   computeMatchPoints,
+  deriveBestThirdGroups,
   GROUP_LETTERS,
   populateR32Slots,
   THIRD_PLACE_WINNER_GROUPS,
@@ -35,8 +37,8 @@ import {
   type MatchScore,
   type Team,
 } from "@/lib/bracket";
-import { hasRealResult } from "@/lib/match-display";
-import { checkMatchLock, checkRoundLock } from "@/lib/lock-check";
+import { hasMatchStarted, hasRealResult } from "@/lib/match-display";
+import { checkMatchLock } from "@/lib/lock-check";
 import type {
   HydratedFinalistPicks,
   HydratedKnockoutMatch,
@@ -112,7 +114,6 @@ interface Props {
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
   initialPredictions: HydratedPrediction[];
-  initialQualifyingThirdGroups: string[];
   initialFinalistPicks: HydratedFinalistPicks;
   slotLabelById: Record<string, string>;
   realTeamIdBySlotLabel: Record<string, string>;
@@ -133,7 +134,6 @@ export function PredictionsClient({
   groupMatches,
   knockoutMatches,
   initialPredictions,
-  initialQualifyingThirdGroups,
   initialFinalistPicks,
   slotLabelById,
   realTeamIdBySlotLabel,
@@ -159,16 +159,6 @@ export function PredictionsClient({
   const [saveStatus, setSaveStatus] = useState<Map<string, SaveStatus>>(
     new Map(),
   );
-
-  // "Best third-placed teams" qualifying set: the group letters whose
-  // 3rd-placed team the user predicts will advance (≤8). Saved via
-  // /api/third-place-assignments; Annex C derives the R32 opponents.
-  const [qualifyingGroups, setQualifyingGroups] = useState<Set<string>>(
-    () => new Set(initialQualifyingThirdGroups),
-  );
-  const [thirdPlaceSaveStatus, setThirdPlaceSaveStatus] = useState<
-    Map<string, SaveStatus>
-  >(new Map());
 
   // Tournament-wide podium bet (independent of bracket cascade).
   const [finalistPicks, setFinalistPicks] = useState<FinalistPicksState>(
@@ -211,25 +201,6 @@ export function PredictionsClient({
     [],
   );
 
-  const flushQualifyingSave = useCallback(
-    async (group_letter: string, selected: boolean) => {
-      setThirdPlaceSaveStatus((s) => new Map(s).set(group_letter, "saving"));
-      try {
-        const res = await fetch("/api/third-place-assignments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ group_letter, selected }),
-        });
-        if (!res.ok) throw new Error(`save failed ${res.status}`);
-        setThirdPlaceSaveStatus((s) => new Map(s).set(group_letter, "saved"));
-      } catch (e) {
-        console.error("[third-place] save failed", e);
-        setThirdPlaceSaveStatus((s) => new Map(s).set(group_letter, "error"));
-      }
-    },
-    [],
-  );
-
   const flushFinalistSave = useCallback(
     async (next: FinalistPicksState) => {
       setFinalistSaveStatus("saving");
@@ -262,30 +233,6 @@ export function PredictionsClient({
       pendingTimers.current.set(key, timer);
     },
     [flushFinalistSave],
-  );
-
-  const writeQualifyingGroup = useCallback(
-    (group_letter: string, selected: boolean) => {
-      setQualifyingGroups((prev) => {
-        const next = new Set(prev);
-        if (selected) {
-          if (next.size >= 8 && !next.has(group_letter)) return prev; // ceiling
-          next.add(group_letter);
-        } else {
-          next.delete(group_letter);
-        }
-        return next;
-      });
-      const key = `third:${group_letter}`;
-      const existing = pendingTimers.current.get(key);
-      if (existing) clearTimeout(existing);
-      const timer = setTimeout(() => {
-        flushQualifyingSave(group_letter, selected);
-        pendingTimers.current.delete(key);
-      }, SAVE_DEBOUNCE_MS);
-      pendingTimers.current.set(key, timer);
-    },
-    [flushQualifyingSave],
   );
 
   const writePrediction = useCallback(
@@ -412,10 +359,24 @@ export function PredictionsClient({
     return rows;
   }, [standingsByGroup, groupTeams]);
 
-  // The qualifying set as a typed array for populateR32Slots / Annex C.
+  // Auto-derived qualifying set: the 8 groups whose 3rd-placed team ranks
+  // highest (points → GD → goals for). Replaces the retired manual pick, so
+  // there's nothing for a user to copy from reality. Blended (real where a
+  // match has finished, else predicted) feeds the main cascade; a pure-
+  // predicted variant feeds the predicted-only sidebar view so it stays
+  // consistent with its own standings. derivedQualifyingGroups (blended)
+  // drives the read-only cluster highlight.
   const qualifyingGroupsArray = useMemo<GroupLetter[]>(
-    () => [...qualifyingGroups] as GroupLetter[],
-    [qualifyingGroups],
+    () => deriveBestThirdGroups(standingsByGroup).groups,
+    [standingsByGroup],
+  );
+  const qualifyingGroupsArrayPredicted = useMemo<GroupLetter[]>(
+    () => deriveBestThirdGroups(standingsByGroupPredicted).groups,
+    [standingsByGroupPredicted],
+  );
+  const derivedQualifyingGroups = useMemo<Set<string>>(
+    () => new Set(qualifyingGroupsArray),
+    [qualifyingGroupsArray],
   );
 
   // FIFA's real 8 qualifying 3rd-placed team_ids, read off the settled
@@ -524,14 +485,14 @@ export function PredictionsClient({
     try {
       r32Slots = populateR32Slots(
         standingsByGroupPredicted,
-        qualifyingGroupsArray,
+        qualifyingGroupsArrayPredicted,
       );
     } catch (e) {
       console.error("[predictions] populateR32Slots failed:", e);
       r32Slots = populateR32Slots(standingsByGroupPredicted, []);
     }
     return computeKnockoutCascade(r32Slots, knockoutPreds);
-  }, [standingsByGroupPredicted, qualifyingGroupsArray, knockoutPreds]);
+  }, [standingsByGroupPredicted, qualifyingGroupsArrayPredicted, knockoutPreds]);
 
   const bracketSlotMapReal = useMemo<Map<string, string | null>>(
     () => new Map(Object.entries(realTeamIdBySlotLabel)),
@@ -627,20 +588,6 @@ export function PredictionsClient({
     ? undefined
     : rounds.find((r) => r.id === activeRoundId);
   const isKnockoutRound = !isPodium && activeRound?.stage !== "group";
-
-  // Round-level lock — only the third-place cluster uses this now, since
-  // those picks lock at R32's deadline (not per match). `now` ticks every
-  // 60s so a deadline passing mid-session freezes the cluster within a
-  // minute.
-  const activeRoundLocked = activeRound
-    ? !checkRoundLock(
-        {
-          locked_at: activeRound.locked_at,
-          deadline_at: activeRound.deadline_at,
-        },
-        now,
-      ).editable
-    : false;
 
   // Per-match lock — client-side mirror of the API's checkMatchLock
   // (lib/lock-check.ts is the shared pure helper, so semantics can't
@@ -758,12 +705,9 @@ export function PredictionsClient({
                 {activeRound?.stage === "r32" ? (
                   <ThirdPlaceCluster
                     rows={thirdPlaceRows}
-                    selected={qualifyingGroups}
-                    saveStatus={thirdPlaceSaveStatus}
+                    derived={derivedQualifyingGroups}
                     groupPredictionsComplete={groupPredictionsComplete}
                     realQualifyingThirdTeamIds={realQualifyingThirdTeamIds}
-                    locked={activeRoundLocked}
-                    onToggle={writeQualifyingGroup}
                   />
                 ) : null}
                 <div className="space-y-2">
@@ -821,6 +765,15 @@ export function PredictionsClient({
                             state,
                             actualWinningSlotId,
                           )}
+                          footer={
+                            <OtherPicksButton
+                              matchId={match.id}
+                              homeCode={homeCode}
+                              awayCode={awayCode}
+                              homeSlotId={match.home_slot_id}
+                              awaySlotId={match.away_slot_id}
+                            />
+                          }
                         />
                       );
                     }
@@ -844,6 +797,21 @@ export function PredictionsClient({
                         saveStatus={saveStatus.get(match.id) ?? "idle"}
                         locked={isMatchLocked(match.scheduled_at)}
                         lockHint={formatLockHint(match.scheduled_at, now)}
+                        footer={
+                          hasMatchStarted(match, now) ? (
+                            <OtherPicksButton
+                              matchId={match.id}
+                              homeCode={
+                                teamCodeAtLabel(match.home_slot_label) ?? "—"
+                              }
+                              awayCode={
+                                teamCodeAtLabel(match.away_slot_label) ?? "—"
+                              }
+                              homeSlotId={match.home_slot_id}
+                              awaySlotId={match.away_slot_id}
+                            />
+                          ) : null
+                        }
                         onChange={(home, away, winner) =>
                           writeKnockoutPrediction(match.id, {
                             home,
@@ -899,6 +867,15 @@ export function PredictionsClient({
                                 winnerCode: null,
                               }}
                               pointsAwarded={scoreGroupPoints(match, score)}
+                              footer={
+                                <OtherPicksButton
+                                  matchId={match.id}
+                                  homeCode={match.home.code}
+                                  awayCode={match.away.code}
+                                  homeSlotId={match.home_slot_id}
+                                  awaySlotId={match.away_slot_id}
+                                />
+                              }
                             />
                           );
                         }
@@ -912,6 +889,17 @@ export function PredictionsClient({
                             saveStatus={saveStatus.get(match.id) ?? "idle"}
                             locked={isMatchLocked(match.scheduled_at)}
                             lockHint={formatLockHint(match.scheduled_at, now)}
+                            footer={
+                              hasMatchStarted(match, now) ? (
+                                <OtherPicksButton
+                                  matchId={match.id}
+                                  homeCode={match.home.code}
+                                  awayCode={match.away.code}
+                                  homeSlotId={match.home_slot_id}
+                                  awaySlotId={match.away_slot_id}
+                                />
+                              ) : null
+                            }
                             onChange={(h, a) =>
                               writePrediction(match.id, {
                                 home: h,

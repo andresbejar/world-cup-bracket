@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
   adminClient,
-  QUALIFYING_THIRD_GROUPS,
   listGroupMatches,
   listKnockoutMatches,
 } from "./helpers";
@@ -20,10 +19,10 @@ import { TEST_USER_EMAIL } from "./global-setup";
 
 test.describe.configure({ mode: "serial" });
 
-// Bumped from the 30s default — the build spec issues ~110 sequential
-// API calls (72 group + 8 third-place + 32 knockout + 1 finalist) plus
-// a reload + a handful of UI assertions. ~60s comfortably covers both
-// local and CI runs.
+// Bumped from the 30s default — the build spec issues ~105 sequential
+// API calls (72 group + 32 knockout + 1 finalist) plus a reload + a
+// handful of UI assertions. ~60s comfortably covers both local and CI
+// runs. (Best-third picks are auto-derived now, no API calls.)
 test.setTimeout(90_000);
 
 // Kickoffs we pushed into the future so the seed predictions are accepted,
@@ -111,21 +110,14 @@ test.describe("bracket build", () => {
       expect(res.status(), `predict ${m.id} (${m.home_code} vs ${m.away_code})`).toBe(200);
     });
 
-    // Select 8 groups as the "best third-placed teams" qualifying set.
-    // Annex C derives each one's R32 opponent — the spec just proves the
-    // set persists; correctness of the assignment is unit-tested.
+    // The "best third-placed teams" qualifying set is no longer a manual
+    // pick — it's auto-derived from the group predictions (top 8 thirds by
+    // points → GD → goals for) and contributes 0 points. With every group
+    // fully predicted below, the 8 best-3rd-vs R32 slots fill automatically
+    // via Annex C; we assert that (zero dashes) further down.
     const teamPool = Array.from(
       new Set(groupMatches.map((m) => m.home_team_id)),
     );
-    for (const group_letter of QUALIFYING_THIRD_GROUPS) {
-      const res = await request.post("/api/third-place-assignments", {
-        data: { group_letter, selected: true },
-      });
-      expect(
-        res.status(),
-        `qualifying third group ${group_letter}`,
-      ).toBe(200);
-    }
 
     // Knockout predictions: home wins 1-0 in every match. predicted_
     // winning_slot_id = home_slot_id for the slot-vs-team premise.

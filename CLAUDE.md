@@ -30,6 +30,34 @@ The full design doc lives at `designs/andresbejar-main-design-20260509-161531.md
 - **Scoring is idempotent** — running twice doesn't double-count points. Polling cron retries are safe.
 - **Hand-curated fixture seed**, not pulled from api-football. The API is results-only.
 
+### Best third-placed teams (retired side bet)
+
+The "best third-placed teams" bet is **not scored** — it contributes 0 to the
+leaderboard. It used to let users pick which 8 of the 12 groups' third-placed
+teams advance, but it locked at R32's deadline, by which point every group match
+had finished and the answer was public — a free-points leak. Now:
+
+- **Predicted side is display-only and auto-derived.** The 8 are computed from the
+  user's group predictions (`deriveBestThirdGroups` in `lib/bracket.ts`: rank-3 per
+  group, sorted points → GD → goals for, top 8). The `ThirdPlaceCluster` UI is
+  read-only. There is no manual picker and no `/api/third-place-assignments` route.
+  The `predicted_qualifying_thirds` table is **kept but unused** (no destructive
+  mid-tournament migration); `computeThirdPlacePlacementPoints` is kept (with tests)
+  but no longer wired into `total_points`.
+- **Real side auto-populates the bracket.** Once the group stage finishes, the
+  poll-results cron derives the real 8 qualifying thirds from real standings and
+  fills the 8 Annex-C `best-3rd-vs-{winner}` R32 slots
+  (`populateRealBestThirdSlotsAuto` → `resolveRealQualifyingThirds` in
+  `lib/reality.ts`). Real match results then flow through the existing Sports-API
+  pipeline (`applyKnockoutBackfill` + `fetchFixtures`).
+- **`REAL_QUALIFYING_THIRDS` override** (Vercel prod env, e.g. `"A,B,D,E,G,I,K,L"`):
+  set this **only** when the 8th/9th best thirds are a true tie that FIFA breaks by
+  disciplinary record / drawing of lots (which we can't simulate). On such a tie with
+  no override, the cron holds and logs that an override is needed rather than guessing.
+  Empty/unset = pure auto-derive. Preview with `npx tsx scripts/preview-real-thirds.ts`
+  (read-only dry-run). After deploy, `npx tsx scripts/recompute-totals.ts` flushes any
+  stale total (hygiene; normally a no-op since the real set was never settled).
+
 ## Score polling (APT-60)
 
 `POST /api/cron/poll-results` pulls results from api-sports and runs scoring. It's

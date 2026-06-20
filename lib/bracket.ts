@@ -332,6 +332,76 @@ export function populateR32Slots(
   return assignments;
 }
 
+export interface BestThirdGroups {
+  /** The (up to 8) group letters whose 3rd-placed team ranks highest. */
+  groups: GroupLetter[];
+  /**
+   * True when the 8th- and 9th-ranked third-placed teams are tied on all
+   * three rankable keys (points, GD, goals for). FIFA breaks such a tie
+   * with disciplinary record / drawing of lots, which we can't simulate —
+   * so the caller must not auto-pick the qualifying set and should fall
+   * back to an explicit override. False when there are fewer than 9 thirds
+   * (no boundary to be ambiguous about).
+   */
+  boundaryTie: boolean;
+}
+
+/**
+ * Rank the 12 third-placed teams across all groups and return the 8 whose
+ * 3rd-placed team qualifies, by FIFA's cross-group tiebreakers (points →
+ * goal difference → goals scored). Pure mirror of how the UI ranks
+ * `thirdPlaceRows`; used to auto-derive both the predicted and the real
+ * qualifying set without an explicit pick.
+ *
+ * Sort is made deterministic with a final alphabetical group_letter key,
+ * but a genuine 8th/9th tie on the three rankable keys is surfaced via
+ * `boundaryTie` so callers can refuse to guess. Groups missing a rank-3
+ * standing (incomplete input) are skipped; the result may have < 8 groups.
+ */
+export function deriveBestThirdGroups(
+  groups: readonly GroupStandings[],
+): BestThirdGroups {
+  const thirds: {
+    group_letter: GroupLetter;
+    points: number;
+    goal_difference: number;
+    goals_for: number;
+  }[] = [];
+  for (const g of groups) {
+    const third = g.standings.find((s) => s.rank === 3);
+    if (!third) continue;
+    thirds.push({
+      group_letter: g.group_letter as GroupLetter,
+      points: third.points,
+      goal_difference: third.goal_difference,
+      goals_for: third.goals_for,
+    });
+  }
+
+  thirds.sort(
+    (a, b) =>
+      b.points - a.points ||
+      b.goal_difference - a.goal_difference ||
+      b.goals_for - a.goals_for ||
+      a.group_letter.localeCompare(b.group_letter),
+  );
+
+  const tied = (
+    a: (typeof thirds)[number],
+    b: (typeof thirds)[number],
+  ): boolean =>
+    a.points === b.points &&
+    a.goal_difference === b.goal_difference &&
+    a.goals_for === b.goals_for;
+
+  const boundaryTie = thirds.length >= 9 && tied(thirds[7], thirds[8]);
+
+  return {
+    groups: thirds.slice(0, 8).map((t) => t.group_letter),
+    boundaryTie,
+  };
+}
+
 // ======================================================================
 // Knockout cascade — resolve every downstream slot from upstream picks
 // ======================================================================

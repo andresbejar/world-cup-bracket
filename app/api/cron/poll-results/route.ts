@@ -4,6 +4,7 @@ import { fetchFixtures, type FixtureResult } from "@/lib/apifootball";
 import { scoreMatch, scoreFinalists } from "@/lib/scoring-runtime";
 import {
   populateRealR32SlotsFromGroupResults,
+  populateRealBestThirdSlotsAuto,
   populateRealKnockoutSlots,
 } from "@/lib/reality";
 import { applyKnockoutBackfill } from "@/lib/knockout-backfill";
@@ -270,12 +271,15 @@ async function runPipeline(
   }
 
   // 4. Reality advancement. First land the 24 group-driven R32 slot
-  // real_team_ids (once every group match is finished). Then advance
-  // knockout winners (and SF losers) round-by-round into their downstream
-  // slots, and finally score the finalist podium bets. Order matters:
-  // knockout advancement reads R32 slots; finalist scoring reads the
-  // final/third-place slots that advancement fills. All idempotent.
+  // real_team_ids (once every group match is finished), then the 8
+  // Annex-C best-third slots (auto-derived from real standings, or via the
+  // REAL_QUALIFYING_THIRDS override — see populateRealBestThirdSlotsAuto).
+  // Then advance knockout winners (and SF losers) round-by-round into their
+  // downstream slots, and finally score the finalist podium bets. Order
+  // matters: knockout advancement reads R32 slots; finalist scoring reads
+  // the final/third-place slots that advancement fills. All idempotent.
   const realityOutcome = await populateRealR32SlotsFromGroupResults(supabase);
+  const bestThirdOutcome = await populateRealBestThirdSlotsAuto(supabase);
   const knockoutReality = await populateRealKnockoutSlots(supabase);
   const finalistOutcome = await scoreFinalists(supabase);
 
@@ -288,6 +292,7 @@ async function runPipeline(
     scored,
     matches_needing_scoring: work.ids.length,
     reality: realityOutcome,
+    best_third: bestThirdOutcome,
     knockout_reality: knockoutReality,
     finalists: finalistOutcome,
   };

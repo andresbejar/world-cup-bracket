@@ -238,11 +238,3 @@ export async function listKnockoutMatches(): Promise<KnockoutMatchRow[]> {
   });
 }
 
-/**
- * The 8 group letters a spec selects as the "best third-placed teams"
- * qualifying set. Posted to /api/third-place-assignments as
- * { group_letter, selected: true }; Annex C derives the R32 opponents.
- */
-export const QUALIFYING_THIRD_GROUPS = [
-  "A", "B", "C", "D", "E", "F", "G", "H",
-] as const;

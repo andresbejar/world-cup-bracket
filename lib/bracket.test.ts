@@ -6,6 +6,7 @@ import {
   computeLeaderboard,
   computeMatchPoints,
   computeThirdPlacePlacementPoints,
+  deriveBestThirdGroups,
   populateR32Slots,
   GROUP_LETTERS,
   type ActualMatch,
@@ -684,6 +685,130 @@ describe("computeThirdPlacePlacementPoints", () => {
 
   it("empty predicted set → 0", () => {
     expect(computeThirdPlacePlacementPoints([], real)).toBe(0);
+  });
+});
+
+// ----------------------------------------------------------------------
+// deriveBestThirdGroups
+// ----------------------------------------------------------------------
+
+describe("deriveBestThirdGroups", () => {
+  // Build a group whose 3rd-placed team has the given (points, GD, GF).
+  // deriveBestThirdGroups only reads the rank-3 standing.
+  function groupWithThird(
+    letter: string,
+    points: number,
+    gd: number,
+    gf: number,
+  ): GroupStandings {
+    const mk = (
+      rank: number,
+      p: number,
+      d: number,
+      f: number,
+    ): GroupStanding => ({
+      team_id: `${letter}${rank}`,
+      played: 3,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goals_for: f,
+      goals_against: 0,
+      goal_difference: d,
+      points: p,
+      rank,
+      needs_tiebreaker: false,
+    });
+    return {
+      group_letter: letter as GroupLetter,
+      standings: [mk(1, 9, 9, 9), mk(2, 7, 5, 7), mk(3, points, gd, gf), mk(4, 0, -9, 0)],
+    };
+  }
+
+  it("returns the 8 groups whose 3rd-placed team ranks highest by points", () => {
+    // A..L get descending third-place points 12..1 → top 8 are A..H.
+    const groups = GROUP_LETTERS.map((l, i) =>
+      groupWithThird(l, 12 - i, 0, 0),
+    );
+    const { groups: out, boundaryTie } = deriveBestThirdGroups(groups);
+    expect([...out].sort()).toEqual(["A", "B", "C", "D", "E", "F", "G", "H"]);
+    expect(boundaryTie).toBe(false);
+  });
+
+  it("orders by GD then goals-for when points tie at the boundary", () => {
+    // A-G clearly in (10 pts). H/I/J tie on 5 pts; H wins on GF over I, J
+    // loses on GD → 8th is H, excluding I and J.
+    const groups = [
+      ...["A", "B", "C", "D", "E", "F", "G"].map((l) =>
+        groupWithThird(l, 10, 0, 0),
+      ),
+      groupWithThird("H", 5, 3, 4),
+      groupWithThird("I", 5, 3, 2),
+      groupWithThird("J", 5, 1, 9),
+      groupWithThird("K", 0, 0, 0),
+      groupWithThird("L", 0, 0, 0),
+    ];
+    const { groups: out, boundaryTie } = deriveBestThirdGroups(groups);
+    expect(out).toContain("H");
+    expect(out).not.toContain("I");
+    expect(out).not.toContain("J");
+    expect(boundaryTie).toBe(false);
+  });
+
+  it("high points beat alphabetical order — late groups can qualify", () => {
+    const groups = [
+      groupWithThird("A", 0, 0, 0),
+      groupWithThird("B", 0, 0, 0),
+      ...["C", "D", "E", "F", "G", "H", "I", "J"].map((l) =>
+        groupWithThird(l, 6, 0, 0),
+      ),
+      groupWithThird("K", 9, 0, 0),
+      groupWithThird("L", 9, 0, 0),
+    ];
+    const { groups: out } = deriveBestThirdGroups(groups);
+    expect(out).toContain("K");
+    expect(out).toContain("L");
+    expect(out).not.toContain("A");
+    expect(out).not.toContain("B");
+  });
+
+  it("flags boundaryTie when 8th and 9th thirds tie on points/GD/GF", () => {
+    // A-G high, then H and I identical at the cutoff.
+    const groups = [
+      ...["A", "B", "C", "D", "E", "F", "G"].map((l) =>
+        groupWithThird(l, 10, 0, 0),
+      ),
+      groupWithThird("H", 5, 2, 3),
+      groupWithThird("I", 5, 2, 3),
+      groupWithThird("J", 1, 0, 0),
+      groupWithThird("K", 0, 0, 0),
+      groupWithThird("L", 0, 0, 0),
+    ];
+    const { boundaryTie } = deriveBestThirdGroups(groups);
+    expect(boundaryTie).toBe(true);
+  });
+
+  it("all 12 thirds identical → boundaryTie true, first 8 alphabetical", () => {
+    const groups = GROUP_LETTERS.map((l) => groupWithThird(l, 3, 0, 0));
+    const { groups: out, boundaryTie } = deriveBestThirdGroups(groups);
+    expect(boundaryTie).toBe(true);
+    expect([...out].sort()).toEqual(["A", "B", "C", "D", "E", "F", "G", "H"]);
+  });
+
+  it("incomplete input (fewer than 8 thirds) → returns what exists, no tie", () => {
+    const groups: GroupStandings[] = [
+      groupWithThird("A", 6, 0, 0),
+      groupWithThird("B", 5, 0, 0),
+      groupWithThird("C", 4, 0, 0),
+      // remaining groups have no rank-3 standing yet
+      ...["D", "E", "F", "G", "H", "I", "J", "K", "L"].map((l) => ({
+        group_letter: l as GroupLetter,
+        standings: [] as GroupStanding[],
+      })),
+    ];
+    const { groups: out, boundaryTie } = deriveBestThirdGroups(groups);
+    expect([...out].sort()).toEqual(["A", "B", "C"]);
+    expect(boundaryTie).toBe(false);
   });
 });
 
