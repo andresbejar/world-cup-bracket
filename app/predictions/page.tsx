@@ -40,6 +40,7 @@ export default async function PredictionsPage() {
         groupTeams={workspace.groupTeams}
         groupMatches={workspace.groupMatches}
         knockoutMatches={workspace.knockoutMatches}
+        initialActiveRoundId={workspace.activeRoundId}
         initialPredictions={workspace.predictions}
         initialFinalistPicks={workspace.finalistPicks}
         slotLabelById={workspace.slotLabelById}

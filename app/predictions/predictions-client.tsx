@@ -113,6 +113,7 @@ interface Props {
   groupTeams: HydratedTeam[];
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
+  initialActiveRoundId: string;
   initialPredictions: HydratedPrediction[];
   initialFinalistPicks: HydratedFinalistPicks;
   slotLabelById: Record<string, string>;
@@ -133,13 +134,19 @@ export function PredictionsClient({
   groupTeams,
   groupMatches,
   knockoutMatches,
+  initialActiveRoundId,
   initialPredictions,
   initialFinalistPicks,
   slotLabelById,
   realTeamIdBySlotLabel,
 }: Props) {
+  // Open to the currently active round (computed server-side); fall back to the
+  // first group matchday if it's somehow empty. Users can switch tabs freely.
   const [activeRoundId, setActiveRoundId] = useState<string>(
-    rounds.find((r) => r.stage === "group")?.id ?? rounds[0]?.id ?? "",
+    initialActiveRoundId ||
+      rounds.find((r) => r.stage === "group")?.id ||
+      rounds[0]?.id ||
+      "",
   );
 
   // Single source of truth for every prediction (group + knockout), keyed by match_id.
