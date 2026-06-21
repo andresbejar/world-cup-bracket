@@ -7,6 +7,7 @@
 // without needing a server roundtrip per keystroke.
 
 import { createClient } from "@/lib/supabase/server";
+import { resolveActiveRoundId } from "@/lib/active-round";
 
 export interface HydratedTeam {
   id: string; // ISO alpha-3
@@ -88,6 +89,12 @@ export interface PredictionWorkspaceData {
   groupTeams: HydratedTeam[];
   groupMatches: HydratedMatch[];
   knockoutMatches: HydratedKnockoutMatch[];
+  /**
+   * The round the predictions screen should open to: the earliest round
+   * (in deadline order) that still has a non-finished match, falling back
+   * to the last round once the tournament is over. See lib/active-round.ts.
+   */
+  activeRoundId: string;
   predictions: HydratedPrediction[];
   finalistPicks: HydratedFinalistPicks;
   /** bracket_slot.id → bracket_slot.slot_label, for resolving predicted_winning_slot_id. */
@@ -225,6 +232,10 @@ export async function loadPredictionWorkspace(
     groupTeams: [...teamById.values()],
     groupMatches,
     knockoutMatches,
+    activeRoundId: resolveActiveRoundId(rounds ?? [], [
+      ...groupMatches,
+      ...knockoutMatches,
+    ]),
     predictions: predictions ?? [],
     finalistPicks: finalist ?? {
       first_place_team_id: null,
