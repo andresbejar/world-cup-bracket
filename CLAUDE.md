@@ -37,13 +37,17 @@ leaderboard. It used to let users pick which 8 of the 12 groups' third-placed
 teams advance, but it locked at R32's deadline, by which point every group match
 had finished and the answer was public — a free-points leak. Now:
 
-- **Predicted side is display-only and auto-derived.** The 8 are computed from the
-  user's group predictions (`deriveBestThirdGroups` in `lib/bracket.ts`: rank-3 per
-  group, sorted points → GD → goals for, top 8). The `ThirdPlaceCluster` UI is
-  read-only. There is no manual picker and no `/api/third-place-assignments` route.
-  The `predicted_qualifying_thirds` table is **kept but unused** (no destructive
-  mid-tournament migration); `computeThirdPlacePlacementPoints` is kept (with tests)
-  but no longer wired into `total_points`.
+- **Display side is read-only and auto-derived from current real standings.** The 8
+  are computed from current real group standings, not the user's predictions
+  (`deriveBestThirdGroups` in `lib/bracket.ts` fed `standingsByGroupReal`: rank-3 per
+  group, sorted points → GD → goals for, top 8). During the live tournament the
+  `/predictions` workspace shows only real data, so the `ThirdPlaceCluster` UI lists
+  the top 8 thirds by current standings ("TOP 8 BY CURRENT STANDINGS"), not "your
+  predictions". The UI is read-only — there is no manual picker and no
+  `/api/third-place-assignments` route. The `predicted_qualifying_thirds` table is
+  **kept but unused** (no destructive mid-tournament migration);
+  `computeThirdPlacePlacementPoints` is kept (with tests) but no longer wired into
+  `total_points`.
 - **Real side auto-populates the bracket.** Once the group stage finishes, the
   poll-results cron derives the real 8 qualifying thirds from real standings and
   fills the 8 Annex-C `best-3rd-vs-{winner}` R32 slots
