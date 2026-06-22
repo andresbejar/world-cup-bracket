@@ -32,6 +32,17 @@ test.setTimeout(90_000);
 // re-open the ones real time has already passed.
 const restoredKickoffs: { id: string; scheduled_at: string }[] = [];
 
+// Match result rows the second spec flips to `finished` to exercise the
+// real-only sidebar; restored verbatim in afterAll.
+const restoredResults: {
+  id: string;
+  status: string;
+  home_score: number | null;
+  away_score: number | null;
+  finished_at: string | null;
+  scheduled_at: string;
+}[] = [];
+
 test.describe("bracket build", () => {
   test.beforeAll(async () => {
     // Wipe any leftover state from prior spec runs so this file is
@@ -79,6 +90,20 @@ test.describe("bracket build", () => {
 
   test.afterAll(async () => {
     const admin = adminClient();
+    // Restore flipped results first (status → scheduled), then kickoffs.
+    for (const snap of restoredResults) {
+      await admin
+        .from("matches")
+        .update({
+          status: snap.status,
+          home_score: snap.home_score,
+          away_score: snap.away_score,
+          finished_at: snap.finished_at,
+          scheduled_at: snap.scheduled_at,
+        })
+        .eq("id", snap.id);
+    }
+    restoredResults.length = 0;
     for (const snap of restoredKickoffs) {
       await admin
         .from("matches")
@@ -159,28 +184,26 @@ test.describe("bracket build", () => {
         .locator("span", { hasText: /FILLED|3\/3/ }),
     ).toBeVisible();
 
-    // Switch to the bracket sidebar standings tab and verify all groups
-    // are populated (every team has played = 3 matches).
+    // Switch to the standings tab. The sidebar now shows REAL standings only
+    // (the predicted view + source toggle were removed): with no real matches
+    // finished, all 12 group tables render at 0 played.
     await page.getByRole("tab", { name: /Standings/i }).click();
-    // With no real matches finished, the standings default to the PREDICTED
-    // source (APT-61), whose tables fill from the user's picks. The eyebrow
-    // reflects the source; the meta reads "PROJECTED" rather than a REAL count.
-    await expect(page.getByText("GROUP STAGE · PREDICTED")).toBeVisible();
-    // Each group's first-rank row should be visible (12 groups). Grab
-    // the "01" rank cells inside the standings tables; should be 12.
-    const rank1Cells = page.locator("td", { hasText: /^1$/ });
-    await expect(rank1Cells).toHaveCount(12);
+    await expect(page.getByText("GROUP STAGE", { exact: true })).toBeVisible();
+    await expect(page.getByText("0/72 PLAYED")).toBeVisible();
+    await expect(page.locator('[role="tabpanel"] table')).toHaveCount(12);
 
-    // Switch to bracket view and confirm R32 slots have real team codes
-    // (not "—"). With every home team winning their group, the 12
-    // winner-A..L slots should all be filled. The 8 best-3rd-vs slots
-    // fill via Annex C from the auto-derived top-8 thirds (no manual pick).
+    // Bracket view is projected from current real standings: the 32 R32 input
+    // slots fill from the (all-zero) standings — 12 winners + 12 runners-up +
+    // 8 best-thirds via Annex C — while downstream R16→Final stay "—" until
+    // real results land. So the meta reads 32/32 R32 under the disclaimer.
     await page.getByRole("tab", { name: /Bracket/i }).click();
-    const r32Dashes = page.locator("svg text", { hasText: /^—$/ });
-    // R16/QF/SF/F slots populate via cascade off knockout predictions.
-    // Every downstream slot should have a team code too. Zero dashes
-    // expected in the bracket SVG after a full build.
-    await expect(r32Dashes).toHaveCount(0);
+    await expect(page.getByText(/Based on current standings/)).toBeVisible();
+    await expect(page.getByText("32/32 R32")).toBeVisible();
+    // Downstream slots are still blank (no winner predictions applied, no real
+    // knockout results), so the bracket SVG does contain dashes.
+    await expect(
+      page.locator("svg text", { hasText: /^—$/ }).first(),
+    ).toBeVisible();
 
     // Visit the PODIUM tab and verify the three picks rendered. The
     // round-selector pill is a <button> with text PODIUM in the first
@@ -204,70 +227,77 @@ test.describe("bracket build", () => {
     expect(selectedValues.filter((v) => v.length > 0).length).toBeGreaterThanOrEqual(3);
   });
 
-  test("cascade: changing a group score re-renders the standings", async ({
-    page,
-    request,
-  }) => {
-    // This test runs second; the prior test left the user with a full
-    // 2-1 home-wins-every-group-match prediction set.
-    // Strategy: pick any group, flip one home/away score, assert the
-    // group's rank-1 team_code changes (or the sidebar re-renders such
-    // that the previous rank-1 code is no longer in the first position).
+  test("real results drive the sidebar standings", async ({ page }) => {
+    // The sidebar is real-only now: predictions no longer move it; real
+    // finished results do. Finish one group-A match and assert the standings
+    // re-derive — the group's played count ticks up and the winner takes rank 1.
+    const groupMatches = await listGroupMatches();
+    const groupAMatch = groupMatches.find((m) => m.group_letter === "A");
+    expect(groupAMatch).toBeDefined();
 
+    const admin = adminClient();
+    const { data: before, error: beforeErr } = await admin
+      .from("matches")
+      .select("status, home_score, away_score, finished_at, scheduled_at")
+      .eq("id", groupAMatch!.id)
+      .single();
+    if (beforeErr) throw beforeErr;
+    restoredResults.push({
+      id: groupAMatch!.id,
+      status: before!.status as string,
+      home_score: before!.home_score as number | null,
+      away_score: before!.away_score as number | null,
+      finished_at: before!.finished_at as string | null,
+      scheduled_at: before!.scheduled_at as string,
+    });
+
+    // Before any real result, group A shows 0/6 played in the sidebar.
     await page.goto("/predictions");
     await expect(page.getByText("GROUP STAGE · ACTIVE ROUND")).toBeVisible({
       timeout: 15_000,
     });
     await page.getByRole("tab", { name: /Standings/i }).click();
-
-    // The standings tables render as <table> with <tbody> per group;
-    // the first <tr> in each table is rank-1. Grab the team-code cell.
-    // The 3-letter code is in the second <td>. There are 12 tables.
-    const firstGroupTable = page
+    const groupACard = page
       .locator("ul li", { has: page.getByText(/^Group A/) })
       .first();
-    const initialRank1 = await firstGroupTable
-      .locator("tbody tr")
-      .first()
-      .locator("td")
-      .nth(1)
-      .textContent();
-    expect(initialRank1?.trim()).toBeTruthy();
+    await expect(groupACard.getByText("0/6 PLAYED")).toBeVisible();
 
-    // Now flip one of group A's matches via the API — change a 2-1 home
-    // win to 0-3 away rout. Pick the first group-A match in seed order
-    // and patch it. This requires us to find the match_id; pull from
-    // the helper.
-    const groupMatches = await listGroupMatches();
-    const groupAMatch = groupMatches.find((m) => m.group_letter === "A");
-    expect(groupAMatch).toBeDefined();
-    await request.post("/api/predictions", {
-      data: {
-        match_id: groupAMatch!.id,
-        predicted_home_score: 0,
-        predicted_away_score: 5,
-      },
-    });
+    // Finish group A's first match as a 3-0 home win. Date it in the past so
+    // hasRealResult() (status=finished AND kickoff passed) counts it as real.
+    const pastIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { error: finErr } = await admin
+      .from("matches")
+      .update({
+        status: "finished",
+        home_score: 3,
+        away_score: 0,
+        finished_at: pastIso,
+        scheduled_at: pastIso,
+      })
+      .eq("id", groupAMatch!.id);
+    if (finErr) throw finErr;
 
-    // Reload to pick up the new state. (We could also exercise the live
-    // cascade by setting the score via the UI's input + buttons, but
-    // that's a much slower path and APT-33 already covers the click →
-    // save → reload pipeline.) The cascade-reactivity contract is that
-    // the standings sidebar re-derives from the predictions Map every
-    // render; reload exercises the same derivation under fresh state.
+    // Reload: the real-only standings now reflect the result.
     await page.reload();
     await page.getByRole("tab", { name: /Standings/i }).click();
-    const newRank1 = await firstGroupTable
+    await expect(groupACard.getByText("1/6 PLAYED")).toBeVisible();
+    // The home team won 3-0 → 3 points → rank 1 (code in the 2nd cell).
+    const rank1Code = await groupACard
       .locator("tbody tr")
       .first()
       .locator("td")
       .nth(1)
       .textContent();
-    expect(newRank1?.trim()).toBeTruthy();
-    // The home team of group A's first match LOST 0-5, so they should
-    // no longer be rank 1 (they were before because every home team
-    // won 2-1). The assertion is "not the same team_code".
-    expect(newRank1?.trim()).not.toBe(initialRank1?.trim());
+    expect(rank1Code?.trim()).toBe(groupAMatch!.home_code);
+
+    // The projected bracket reads off the same real standings, so winner-A's
+    // R32 slot is now the real group-A leader — assert the home team's code
+    // appears in the bracket SVG (covers the real-standings → projected-bracket
+    // path with a non-trivial result, not just the all-zero baseline).
+    await page.getByRole("tab", { name: /Bracket/i }).click();
+    await expect(
+      page.locator("svg text", { hasText: groupAMatch!.home_code }).first(),
+    ).toBeVisible();
   });
 });
 
