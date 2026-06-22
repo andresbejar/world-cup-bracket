@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -287,48 +286,18 @@ export function PredictionsClient({
     [writePrediction],
   );
 
-  // Group cascade — computeGroupStandings × 12.
-  //
-  // Reality merge: for each group match, prefer the real 90+ET score when
-  // status==='finished' (cron-populated from api-football); fall back to
-  // the user's predicted score otherwise. As matches finish IRL, the
-  // standings table morphs from "your prediction" to reality without the
-  // user touching their picks. Pure swap — the slot-ID premise from the
-  // design doc means downstream cascade still works either way.
-  const predictedScore = useCallback(
-    (m: HydratedMatch): { home: number; away: number } | null => {
-      const pred = predictions.get(m.id);
-      return pred ? { home: pred.home, away: pred.away } : null;
-    },
-    [predictions],
-  );
-
-  const standingsByGroup = useMemo<GroupStandings[]>(
-    () =>
-      buildStandings(
-        fillScoresByGroup(groupMatches, (m) => realScore(m) ?? predictedScore(m)),
-        groupTeams,
-      ),
-    [groupTeams, groupMatches, predictedScore],
-  );
-
-  // APT-61 — pure view variants for the sidebar predicted/real toggle.
-  // standingsByGroup (above) stays *blended* (real where finished, else
-  // predicted) and still feeds thirdPlaceRows + the editing column. These
-  // two are display-only: one ignores reality entirely, the other ignores
-  // predictions entirely.
-  const standingsByGroupPredicted = useMemo<GroupStandings[]>(
-    () => buildStandings(fillScoresByGroup(groupMatches, predictedScore), groupTeams),
-    [groupTeams, groupMatches, predictedScore],
-  );
-
+  // Group standings — computeGroupStandings × 12 — from finished results only
+  // (current real standings; unplayed matches contribute nothing). Now that the
+  // tournament is live we never show predicted standings: this single real-only
+  // set drives the sidebar (standings + projected bracket), the third-place
+  // list, and the main-column knockout cascade.
   const standingsByGroupReal = useMemo<GroupStandings[]>(
     () => buildStandings(fillScoresByGroup(groupMatches, realScore), groupTeams),
     [groupTeams, groupMatches],
   );
 
   // Per-group reality indicator for the standings sidebar: how many of
-  // each group's 3 matches have finished. Drives the "REAL / PREDICTED"
+  // each group's 6 matches have finished. Drives the "N/6 PLAYED" / FINAL
   // pill under each group header.
   const realMatchCountByGroup = useMemo<Record<string, number>>(() => {
     const counts: Record<string, number> = {};
@@ -339,13 +308,14 @@ export function PredictionsClient({
     return counts;
   }, [groupMatches]);
 
-  // The 12 teams the user's group predictions ranked 3rd, one per group,
-  // sorted by FIFA's first 3 tiebreakers (points → GD → GS, descending).
-  // Display-only ordering for the selector + its "below the cutoff" line.
+  // The 12 third-placed teams by current real standings, one per group, sorted
+  // by FIFA's first 3 tiebreakers (points → GD → GS, descending). Display-only
+  // ordering for the third-place list + its "below the cutoff" line. Real-only
+  // so it stays consistent with the sidebar's projected bracket.
   const thirdPlaceRows = useMemo<ThirdPlaceRow[]>(() => {
     const teamById = new Map(groupTeams.map((t) => [t.id, t]));
     const rows: ThirdPlaceRow[] = [];
-    for (const g of standingsByGroup) {
+    for (const g of standingsByGroupReal) {
       const third = g.standings.find((s) => s.rank === 3);
       const team = third ? teamById.get(third.team_id) : null;
       if (!third || !team) continue;
@@ -364,26 +334,19 @@ export function PredictionsClient({
         b.goals_for - a.goals_for,
     );
     return rows;
-  }, [standingsByGroup, groupTeams]);
+  }, [standingsByGroupReal, groupTeams]);
 
   // Auto-derived qualifying set: the 8 groups whose 3rd-placed team ranks
-  // highest (points → GD → goals for). Replaces the retired manual pick, so
-  // there's nothing for a user to copy from reality. Blended (real where a
-  // match has finished, else predicted) feeds the main cascade; a pure-
-  // predicted variant feeds the predicted-only sidebar view so it stays
-  // consistent with its own standings. derivedQualifyingGroups (blended)
-  // drives the read-only cluster highlight.
-  const qualifyingGroupsArray = useMemo<GroupLetter[]>(
-    () => deriveBestThirdGroups(standingsByGroup).groups,
-    [standingsByGroup],
+  // highest by current real standings (points → GD → goals for). Replaces the
+  // retired manual pick. Drives the third-place list highlight, the sidebar's
+  // projected bracket, and the main-column knockout cascade — all consistent.
+  const qualifyingGroupsArrayReal = useMemo<GroupLetter[]>(
+    () => deriveBestThirdGroups(standingsByGroupReal).groups,
+    [standingsByGroupReal],
   );
-  const qualifyingGroupsArrayPredicted = useMemo<GroupLetter[]>(
-    () => deriveBestThirdGroups(standingsByGroupPredicted).groups,
-    [standingsByGroupPredicted],
-  );
-  const derivedQualifyingGroups = useMemo<Set<string>>(
-    () => new Set(qualifyingGroupsArray),
-    [qualifyingGroupsArray],
+  const derivedQualifyingGroupsReal = useMemo<Set<string>>(
+    () => new Set(qualifyingGroupsArrayReal),
+    [qualifyingGroupsArrayReal],
   );
 
   // FIFA's real 8 qualifying 3rd-placed team_ids, read off the settled
@@ -400,26 +363,20 @@ export function PredictionsClient({
       : null;
   }, [realTeamIdBySlotLabel]);
 
-  // Track whether every group-stage match has been predicted. The
-  // third-place cluster is locked until this is true so the user's
-  // predicted-thirds set has fully stabilized.
-  const groupPredictionsComplete = useMemo(() => {
-    if (groupMatches.length === 0) return false;
-    return groupMatches.every((m) => predictions.has(m.id));
-  }, [groupMatches, predictions]);
-
-  // R32 → Final cascade. The qualifying set feeds Annex C inside
-  // populateR32Slots to place the 8 third-placed teams.
+  // R32 → Final cascade. Both cascades seed R32 from the *current real*
+  // standings (winners/runners-up + Annex-C best thirds), so the editing
+  // column's R32 matchups match the sidebar's projected bracket. The user's
+  // winner picks then cascade downstream.
   //
   // Two parallel cascades are built here:
-  //   - predictedSlotMap: pure prediction tree. Used to compute the
-  //     "you predicted: X" annotation when reality replaces a team.
-  //   - slotMap: predicted cascade with R32 input team_ids overridden
-  //     by `bracket_slots.real_team_id` when present. This is what every
-  //     downstream card displays.
-  // Slot-ID premise: the user's "which slot advances" choice survives
-  // reality replacement — the slot still points at the same downstream
-  // node, just with the actual team behind it.
+  //   - predictedSlotMap: real R32 + your winner cascade, no reality overlay.
+  //     Used to compute the "you predicted: X" annotation.
+  //   - slotMap: same, but with R32 inputs + downstream slots overlaid by
+  //     `bracket_slots.real_team_id` when the cron has settled them. This is
+  //     what every downstream card displays.
+  // Slot-ID premise: the user's "which slot advances" choice survives reality
+  // replacement — the slot still points at the same downstream node, just with
+  // the actual team behind it.
   const knockoutPreds = useMemo<KnockoutMatchPrediction[]>(() => {
     const out: KnockoutMatchPrediction[] = [];
     for (const m of knockoutMatches) {
@@ -437,74 +394,56 @@ export function PredictionsClient({
     return out;
   }, [knockoutMatches, predictions, slotLabelById]);
 
-  const predictedSlotMap = useMemo<Map<string, string | null>>(() => {
-    let r32Slots;
+  // R32 input slots from current real standings (winners/runners-up + Annex-C
+  // best thirds). Computed once and fed to all three cascades below. The catch
+  // falls back to an empty qualifying set so a bad Annex-C lookup can't blank
+  // the whole bracket.
+  const r32SlotsReal = useMemo(() => {
     try {
-      r32Slots = populateR32Slots(standingsByGroup, qualifyingGroupsArray);
+      return populateR32Slots(standingsByGroupReal, qualifyingGroupsArrayReal);
     } catch (e) {
-      console.error("[predictions] populateR32Slots failed:", e);
-      r32Slots = populateR32Slots(standingsByGroup, []);
+      console.error("[predictions] populateR32Slots (real) failed:", e);
+      return populateR32Slots(standingsByGroupReal, []);
     }
-    return computeKnockoutCascade(r32Slots, knockoutPreds);
-  }, [standingsByGroup, qualifyingGroupsArray, knockoutPreds]);
+  }, [standingsByGroupReal, qualifyingGroupsArrayReal]);
+
+  const predictedSlotMap = useMemo<Map<string, string | null>>(
+    () => computeKnockoutCascade(r32SlotsReal, knockoutPreds),
+    [r32SlotsReal, knockoutPreds],
+  );
 
   const slotMap = useMemo<Map<string, string | null>>(() => {
-    let r32Slots;
-    try {
-      r32Slots = populateR32Slots(standingsByGroup, qualifyingGroupsArray);
-    } catch (e) {
-      console.error("[predictions] populateR32Slots failed:", e);
-      r32Slots = populateR32Slots(standingsByGroup, []);
-    }
-    // Override R32 input slot team_ids with reality when present. The
-    // cascade walks downstream from these via the user's predicted
-    // winners, filling R16+ labels with the *predicted* advancer.
-    const realOverridden = r32Slots.map((s) => {
+    // Override R32 input slot team_ids with the cron-settled real team when
+    // present (e.g. FIFA tiebreaker corrections). The cascade walks downstream
+    // from these via the user's winner picks, filling R16+ labels.
+    const realOverridden = r32SlotsReal.map((s) => {
       const real = realTeamIdBySlotLabel[s.slot_label];
       return real ? { ...s, team_id: real } : s;
     });
     const map = computeKnockoutCascade(realOverridden, knockoutPreds);
     // Then overlay reality onto any downstream slot label the cron has
     // already advanced (r32-match-N-winner, etc.), so a settled match's
-    // "actual" matchup shows who really advanced — not the user's
-    // predicted cascade. predictedSlotMap stays pure-prediction, so the
-    // "you predicted X" annotation still compares correctly.
+    // "actual" matchup shows who really advanced — not the user's predicted
+    // cascade. predictedSlotMap omits this overlay, so the "you predicted X"
+    // annotation still compares correctly.
     for (const [label, teamId] of Object.entries(realTeamIdBySlotLabel)) {
       map.set(label, teamId);
     }
     return map;
-  }, [
-    standingsByGroup,
-    qualifyingGroupsArray,
-    knockoutPreds,
-    realTeamIdBySlotLabel,
-  ]);
+  }, [r32SlotsReal, knockoutPreds, realTeamIdBySlotLabel]);
 
-  // APT-61 — pure view variants for the sidebar predicted/real toggle.
-  //   - bracketSlotMapPredicted: the user's full bracket, R32 inputs from
-  //     their *predicted* standings (not the blend) cascaded by their
-  //     winner picks. No reality overlay.
-  //   - bracketSlotMapReal: reality only — exactly the slots the cron has
-  //     filled (real group results, FIFA best-thirds, real advancers).
-  //     Unsettled labels are absent → the sidebar renders them as "—".
-  const bracketSlotMapPredicted = useMemo<Map<string, string | null>>(() => {
-    let r32Slots;
-    try {
-      r32Slots = populateR32Slots(
-        standingsByGroupPredicted,
-        qualifyingGroupsArrayPredicted,
-      );
-    } catch (e) {
-      console.error("[predictions] populateR32Slots failed:", e);
-      r32Slots = populateR32Slots(standingsByGroupPredicted, []);
+  // Sidebar bracket: projected from CURRENT real standings — R32 inputs are the
+  // real group winners/runners-up + the 8 best real 3rd-placed teams. No winner
+  // predictions are applied (empty cascade), so downstream R16→Final slots stay
+  // "—" until reality fills them; real advancers the cron has settled are then
+  // overlaid on top. Labeled "based on current standings" in the UI.
+  const bracketSlotMapReal = useMemo<Map<string, string | null>>(() => {
+    const map = computeKnockoutCascade(r32SlotsReal, []);
+    for (const [label, teamId] of Object.entries(realTeamIdBySlotLabel)) {
+      map.set(label, teamId);
     }
-    return computeKnockoutCascade(r32Slots, knockoutPreds);
-  }, [standingsByGroupPredicted, qualifyingGroupsArrayPredicted, knockoutPreds]);
-
-  const bracketSlotMapReal = useMemo<Map<string, string | null>>(
-    () => new Map(Object.entries(realTeamIdBySlotLabel)),
-    [realTeamIdBySlotLabel],
-  );
+    return map;
+  }, [r32SlotsReal, realTeamIdBySlotLabel]);
 
   const teamCodeById = useMemo(
     () => new Map(groupTeams.map((t) => [t.id, t.code])),
@@ -712,8 +651,7 @@ export function PredictionsClient({
                 {activeRound?.stage === "r32" ? (
                   <ThirdPlaceCluster
                     rows={thirdPlaceRows}
-                    derived={derivedQualifyingGroups}
-                    groupPredictionsComplete={groupPredictionsComplete}
+                    derived={derivedQualifyingGroupsReal}
                     realQualifyingThirdTeamIds={realQualifyingThirdTeamIds}
                   />
                 ) : null}
@@ -928,21 +866,13 @@ export function PredictionsClient({
             aria-label="Bracket tree"
             className="xl:sticky xl:top-8 xl:self-start"
           >
-            {/* Suspense boundary scopes BracketSidebar's useSearchParams()
-                read: /predictions is auth-dynamic today so it never bails to
-                CSR, but the boundary keeps the build robust if the route is
-                ever made static. */}
-            <Suspense fallback={null}>
-              <BracketSidebar
-                standingsByGroupPredicted={standingsByGroupPredicted}
-                standingsByGroupReal={standingsByGroupReal}
-                realMatchCountByGroup={realMatchCountByGroup}
-                bracketSlotMapPredicted={bracketSlotMapPredicted}
-                bracketSlotMapReal={bracketSlotMapReal}
-                teamCodeById={teamCodeById}
-                activeRound={activeRound}
-              />
-            </Suspense>
+            <BracketSidebar
+              standingsByGroupReal={standingsByGroupReal}
+              realMatchCountByGroup={realMatchCountByGroup}
+              bracketSlotMapReal={bracketSlotMapReal}
+              teamCodeById={teamCodeById}
+              activeRound={activeRound}
+            />
           </aside>
         </div>
       </main>

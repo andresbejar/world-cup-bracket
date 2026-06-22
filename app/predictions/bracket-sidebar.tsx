@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { type GroupStandings } from "@/lib/bracket";
 import {
   R32_MATCHES,
@@ -19,17 +18,14 @@ import type { HydratedRound } from "@/lib/group-data";
 // the parent PredictionsClient — the sidebar is a pure renderer.
 
 interface Props {
-  /** Standings from the user's predictions only (every match), and from real
-   * finished results only. The source toggle picks which to render (APT-61). */
-  standingsByGroupPredicted: GroupStandings[];
+  /** Group standings from real finished results only (current standings;
+   * unplayed matches contribute nothing). */
   standingsByGroupReal: GroupStandings[];
-  /** group_letter → number of finished matches in that group (0..3). Drives the
-   * per-group PREDICTED / "N/3 PLAYED" / FINAL pill under each header + the
-   * default source (real when any match is finished). */
+  /** group_letter → number of finished matches in that group (0..6). Drives the
+   * per-group "N/6 PLAYED" / FINAL pill under each header. */
   realMatchCountByGroup: Record<string, number>;
-  /** Knockout slot label → team_id occupant (or null), one map per source.
-   * Predicted = the user's full cascade; real = only reality-filled slots. */
-  bracketSlotMapPredicted: ReadonlyMap<string, string | null>;
+  /** Knockout slot label → team_id occupant (or null). Projected from current
+   * real standings (R32 inputs), with real advancers overlaid as they finish. */
   bracketSlotMapReal: ReadonlyMap<string, string | null>;
   /** team_id → 3-letter team code. */
   teamCodeById: ReadonlyMap<string, string>;
@@ -38,108 +34,32 @@ interface Props {
 }
 
 type SidebarTab = "bracket" | "standings";
-type StandingsSource = "predicted" | "real";
-
-function isSource(v: string | null): v is StandingsSource {
-  return v === "predicted" || v === "real";
-}
 
 export function BracketSidebar({
-  standingsByGroupPredicted,
   standingsByGroupReal,
   realMatchCountByGroup,
-  bracketSlotMapPredicted,
   bracketSlotMapReal,
   teamCodeById,
   activeRound,
 }: Props) {
   const [tab, setTab] = useState<SidebarTab>("bracket");
 
-  // Source toggle (APT-61): predicted = the user's own bracket, real = actual
-  // tournament state. Default to real once any match has a real result. The
-  // choice persists in the ?standings= URL param: read on mount (share/reload
-  // safe), written via history.replaceState so flipping doesn't refetch the
-  // server component.
-  const searchParams = useSearchParams();
-  const anyReal = Object.values(realMatchCountByGroup).some((n) => n > 0);
-  const [source, setSourceState] = useState<StandingsSource>(() => {
-    const param = searchParams.get("standings");
-    return isSource(param) ? param : anyReal ? "real" : "predicted";
-  });
-
-  const setSource = (next: StandingsSource) => {
-    setSourceState(next);
-    const params = new URLSearchParams(window.location.search);
-    params.set("standings", next);
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}?${params.toString()}`,
-    );
-  };
-
-  const standingsByGroup =
-    source === "predicted" ? standingsByGroupPredicted : standingsByGroupReal;
-  const slotMap =
-    source === "predicted" ? bracketSlotMapPredicted : bracketSlotMapReal;
-
   return (
     <div className="rounded-md border border-border bg-surface p-4">
       <SidebarTabs active={tab} onChange={setTab} />
-      <SourceToggle active={source} onChange={setSource} />
       {tab === "bracket" ? (
         <BracketView
-          slotMap={slotMap}
+          slotMap={bracketSlotMapReal}
           teamCodeById={teamCodeById}
           activeStage={activeRound?.stage}
-          source={source}
         />
       ) : (
         <StandingsView
-          standingsByGroup={standingsByGroup}
+          standingsByGroup={standingsByGroupReal}
           realMatchCountByGroup={realMatchCountByGroup}
           teamCodeById={teamCodeById}
-          source={source}
         />
       )}
-    </div>
-  );
-}
-
-function SourceToggle({
-  active,
-  onChange,
-}: {
-  active: StandingsSource;
-  onChange: (next: StandingsSource) => void;
-}) {
-  const sources: { id: StandingsSource; label: string }[] = [
-    { id: "predicted", label: "Predicted" },
-    { id: "real", label: "Real" },
-  ];
-  return (
-    <div
-      role="tablist"
-      aria-label="Standings source"
-      className="mt-2 flex items-center gap-1 rounded-full border border-border bg-bg p-1"
-    >
-      {sources.map((s) => (
-        <button
-          key={s.id}
-          role="tab"
-          type="button"
-          aria-selected={active === s.id}
-          onClick={() => onChange(s.id)}
-          className={
-            "flex-1 rounded-full px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.08em] transition-colors duration-[var(--motion-micro)] " +
-            (active === s.id
-              ? "bg-accent text-bg"
-              : "text-text-muted hover:text-text-primary")
-          }
-        >
-          {s.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -227,12 +147,10 @@ function BracketView({
   slotMap,
   teamCodeById,
   activeStage,
-  source,
 }: {
   slotMap: ReadonlyMap<string, string | null>;
   teamCodeById: ReadonlyMap<string, string>;
   activeStage: StageId | undefined;
-  source: StandingsSource;
 }) {
   // Count how many R32 slot inputs are populated (winner-A..L, runner-up-A..L,
   // best-3rd-1..8) for the section-heading meta.
@@ -256,7 +174,7 @@ function BracketView({
   return (
     <div role="tabpanel">
       <SectionHeading
-        eyebrow={source === "predicted" ? "KNOCKOUT · PREDICTED" : "KNOCKOUT · LIVE"}
+        eyebrow="KNOCKOUT · PROJECTED"
         title="Bracket"
         meta={`${filledCount}/32 R32`}
       />
@@ -377,9 +295,7 @@ function BracketView({
       </div>
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        {source === "predicted"
-          ? "Your predicted bracket — R32 from your group picks, cascaded by each round's winner pick."
-          : "Actual bracket — slots fill in as real matches finish."}
+        Based on current standings — slots fill in as real matches finish.
       </p>
     </div>
   );
@@ -559,36 +475,23 @@ function StandingsView({
   standingsByGroup,
   realMatchCountByGroup,
   teamCodeById,
-  source,
 }: {
   standingsByGroup: GroupStandings[];
   realMatchCountByGroup: Record<string, number>;
   teamCodeById: ReadonlyMap<string, string>;
-  source: StandingsSource;
 }) {
-  const tieFlagged = standingsByGroup.some((g) =>
-    g.standings.some((s) => s.needs_tiebreaker),
-  );
   const totalRealMatches = standingsByGroup.reduce(
     (acc, g) => acc + (realMatchCountByGroup[g.group_letter] ?? 0),
     0,
   );
-  const totalGroupMatches = standingsByGroup.length * 3;
+  const totalGroupMatches = standingsByGroup.length * 6;
 
   return (
     <div role="tabpanel">
       <SectionHeading
-        eyebrow={
-          source === "predicted"
-            ? "GROUP STAGE · PREDICTED"
-            : "GROUP STAGE · REAL"
-        }
+        eyebrow="GROUP STAGE"
         title="Standings"
-        meta={
-          source === "predicted"
-            ? "PROJECTED"
-            : `${totalRealMatches}/${totalGroupMatches} PLAYED`
-        }
+        meta={`${totalRealMatches}/${totalGroupMatches} PLAYED`}
       />
 
       <ul className="mt-5 space-y-4">
@@ -598,17 +501,12 @@ function StandingsView({
             group={group}
             realMatchCount={realMatchCountByGroup[group.group_letter] ?? 0}
             teamCodeById={teamCodeById}
-            source={source}
           />
         ))}
       </ul>
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        {source === "predicted"
-          ? tieFlagged
-            ? "* unresolved tiebreaker — adjust predictions to break"
-            : "Top 2 from each group + 8 best-thirds advance to R32."
-          : "Standings reflect finished matches only."}
+        Standings reflect finished matches only.
       </p>
     </div>
   );
@@ -618,31 +516,20 @@ function GroupTable({
   group,
   realMatchCount,
   teamCodeById,
-  source,
 }: {
   group: GroupStandings;
   realMatchCount: number;
   teamCodeById: ReadonlyMap<string, string>;
-  source: StandingsSource;
 }) {
-  const settled = realMatchCount >= 3;
+  const settled = realMatchCount >= 6;
   const partial = realMatchCount > 0 && !settled;
-  // In the predicted view the pill is always "PREDICTED"; in the real view it
-  // tracks how many of the group's 3 matches have actually been played.
-  const pillTone =
-    source === "predicted"
-      ? "text-text-dim"
-      : settled
-        ? "text-green-correct"
-        : partial
-          ? "text-accent"
-          : "text-text-dim";
-  const pillLabel =
-    source === "predicted"
-      ? "PREDICTED"
-      : settled
-        ? "FINAL"
-        : `${realMatchCount}/3 PLAYED`;
+  // The pill tracks how many of the group's 6 matches have actually been played.
+  const pillTone = settled
+    ? "text-green-correct"
+    : partial
+      ? "text-accent"
+      : "text-text-dim";
+  const pillLabel = settled ? "FINAL" : `${realMatchCount}/6 PLAYED`;
   return (
     <li className="rounded-sm border border-border bg-bg">
       <div className="flex items-baseline justify-between border-b border-border px-3 py-2">

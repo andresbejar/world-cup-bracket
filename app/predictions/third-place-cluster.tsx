@@ -10,16 +10,16 @@ import type { HydratedTeam } from "@/lib/group-data";
 // answer was public — a free-points leak. It now contributes 0 to the
 // leaderboard (see lib/scoring-runtime.ts) and is purely informational.
 //
-// The 8 that advance are derived automatically from the user's group
-// predictions: the 12 thirds are ranked by predicted points → GD → goals
-// for, and the top 8 (the `derived` set) qualify. FIFA's Annex C then
-// assigns each its R32 opponent (no same-group rematch).
+// The 8 that advance are derived automatically from current real standings:
+// the 12 thirds are ranked by points → GD → goals for, and the top 8 (the
+// `derived` set) qualify. FIFA's Annex C then assigns each its R32 opponent
+// (no same-group rematch).
 //
 // Two render modes:
 //   - Pre-resolution: the 12 thirds, ranked, with the top-8 highlighted and
 //     a "below the cutoff" divider after the 8th row.
-//   - Post-resolution: once FIFA's real qualifying set is known, each derived
-//     row shows whether it actually advanced (hit) or not (miss). No points.
+//   - Post-resolution: once FIFA's real qualifying set is settled, each
+//     derived row shows whether it officially advanced. No points.
 
 export interface ThirdPlaceRow {
   group_letter: string;
@@ -30,12 +30,10 @@ export interface ThirdPlaceRow {
 }
 
 interface Props {
-  /** The 12 predicted third-placed teams, pre-sorted points→GD→GS desc. */
+  /** The 12 third-placed teams by current real standings, pre-sorted points→GD→GS desc. */
   rows: ThirdPlaceRow[];
   /** Group letters whose 3rd-placed team is auto-derived to advance (top 8). */
   derived: ReadonlySet<string>;
-  /** True once all 72 group-stage matches are predicted. */
-  groupPredictionsComplete: boolean;
   /**
    * FIFA's real 8 qualifying third-placed team_ids, or null until group
    * stage has settled. When set, the display switches to results mode.
@@ -48,7 +46,6 @@ const MAX = 8;
 export function ThirdPlaceCluster({
   rows,
   derived,
-  groupPredictionsComplete,
   realQualifyingThirdTeamIds,
 }: Props) {
   const resolved = realQualifyingThirdTeamIds != null;
@@ -83,7 +80,7 @@ export function ThirdPlaceCluster({
           aria-live="polite"
           className="font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums whitespace-nowrap text-text-dim"
         >
-          {resolved ? `${matchedCount}/8 MATCHED` : "TOP 8 BY YOUR PREDICTIONS"}
+          {resolved ? `${matchedCount}/8 MATCHED` : "TOP 8 BY CURRENT STANDINGS"}
         </span>
       </header>
 
@@ -164,10 +161,8 @@ export function ThirdPlaceCluster({
 
       <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
         {resolved
-          ? `FIFA's 8 best thirds are set · ${matchedCount} of your top 8 advanced (not scored).`
-          : !groupPredictionsComplete
-            ? "Finish your group-stage predictions to see who advances."
-            : "Auto-derived from your group predictions · Annex C sets each one's R32 opponent · informational, not scored."}
+          ? `FIFA's 8 best thirds are set · ${matchedCount} of the top 8 by standings advanced (not scored).`
+          : "Top 8 third-placed teams by current standings advance · Annex C sets each one's R32 opponent · not scored."}
       </p>
     </section>
   );
