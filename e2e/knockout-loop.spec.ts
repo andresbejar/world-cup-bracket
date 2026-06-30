@@ -32,6 +32,7 @@ interface MatchSnapshot {
   away_score: number | null;
   winning_slot_id: string | null;
   finished_at: string | null;
+  scheduled_at: string;
 }
 
 const mutatedMatches: MatchSnapshot[] = [];
@@ -39,11 +40,20 @@ const touchedSlots: string[] = []; // slot ids we set real_team_id on (restore �
 let testUserId = "";
 let teamIds: string[] = [];
 
+// Once real wall-clock passes a seed match's kickoff (the tournament is live),
+// the per-match lock (lib/lock-check.ts checkMatchLock) rejects a prediction
+// write to that match with a 403. Push the target's kickoff just into the
+// future so the write is accepted again — same trick as scoring-loop.spec.
+const editableKickoff = () =>
+  new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+
 async function snapshotMatch(id: string) {
   const admin = adminClient();
   const { data, error } = await admin
     .from("matches")
-    .select("id, status, home_score, away_score, winning_slot_id, finished_at")
+    .select(
+      "id, status, home_score, away_score, winning_slot_id, finished_at, scheduled_at",
+    )
     .eq("id", id)
     .single();
   if (error || !data) throw error ?? new Error(`snapshot ${id} failed`);
@@ -96,6 +106,7 @@ test.describe("knockout endgame loop", () => {
           away_score: snap.away_score,
           winning_slot_id: snap.winning_slot_id,
           finished_at: snap.finished_at,
+          scheduled_at: snap.scheduled_at,
         })
         .eq("id", snap.id);
     }
@@ -126,6 +137,14 @@ test.describe("knockout endgame loop", () => {
     // would), so advancement has a real winner to propagate.
     await setSlotTeam(r32.home_slot_id, homeTeam);
     await setSlotTeam(r32.away_slot_id, awayTeam);
+
+    // Re-open this (possibly kicked-off) seed match so the prediction write is
+    // accepted — once wall-clock passes the seed kickoff, the per-match lock
+    // would 403 the POST below. Restored by afterAll via the snapshot.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", r32.id);
 
     // User predicts a 1-1 draw with the AWAY side winning on penalties.
     const predRes = await request.post("/api/predictions", {
