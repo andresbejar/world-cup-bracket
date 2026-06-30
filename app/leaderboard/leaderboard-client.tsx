@@ -170,6 +170,12 @@ function LeaderboardRow({
           <span>{entry.exact_count} EXACT</span>
           <span className="mx-1.5">·</span>
           <span>{entry.outcome_count} OUTCOME</span>
+          {entry.penalty_count > 0 ? (
+            <>
+              <span className="mx-1.5">·</span>
+              <span>{entry.penalty_count} PENALTY</span>
+            </>
+          ) : null}
         </p>
       </div>
       <span

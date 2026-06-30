@@ -963,6 +963,7 @@ describe("computeLeaderboard", () => {
     expect(out.every((e) => e.total_points === 0)).toBe(true);
     expect(out.every((e) => e.exact_count === 0)).toBe(true);
     expect(out.every((e) => e.outcome_count === 0)).toBe(true);
+    expect(out.every((e) => e.penalty_count === 0)).toBe(true);
     expect(out.map((e) => e.rank)).toEqual([1, 2, 3]);
   });
 
@@ -979,7 +980,7 @@ describe("computeLeaderboard", () => {
     expect(out[0].exact_count).toBe(3);
   });
 
-  it("penalty-bonus predictions (4 pts) count as exact-scoreline hits", () => {
+  it("penalty-bonus predictions (4 pts) count as exact-scoreline hits and penalty hits", () => {
     const users = [user("alice", 8, "2026-05-15T10:00:00Z")];
     const preds: ScoredPrediction[] = [
       { user_id: "alice", points_awarded: 4 }, // exact tie + shootout winner
@@ -987,8 +988,9 @@ describe("computeLeaderboard", () => {
       ...outcomePred("alice", 1),
     ];
     const out = computeLeaderboard(users, preds);
-    expect(out[0].exact_count).toBe(2);
+    expect(out[0].exact_count).toBe(2); // the 4-pointer + the plain exact
     expect(out[0].outcome_count).toBe(1);
+    expect(out[0].penalty_count).toBe(1); // only the 4-pointer
   });
 
   it("predictions with null points_awarded are ignored (not yet scored)", () => {
