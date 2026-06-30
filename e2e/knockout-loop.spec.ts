@@ -151,8 +151,9 @@ test.describe("knockout endgame loop", () => {
       })
       .eq("id", r32.id);
 
-    // Exact score (1-1) AND correct winner (away) → 3 pts. This is the
-    // case that silently scored 0/null before winning_slot_id existed.
+    // Exact tied score (1-1) AND correct shootout winner (away) → 3 exact
+    // + 1 penalty-winner bonus = 4 pts. (This is also the case that
+    // silently scored 0/null before winning_slot_id existed.)
     const outcome = await scoreMatch(admin, r32.id);
     expect(outcome.ok).toBe(true);
 
@@ -162,7 +163,7 @@ test.describe("knockout endgame loop", () => {
       .eq("user_id", testUserId)
       .eq("match_id", r32.id)
       .single();
-    expect(predRow?.points_awarded).toBe(3);
+    expect(predRow?.points_awarded).toBe(4);
 
     // Advancement writes the winner (away team) into the downstream R16 slot.
     const advance = await populateRealKnockoutSlots(admin);
@@ -176,13 +177,13 @@ test.describe("knockout endgame loop", () => {
     expect(downstream?.real_team_id).toBe(awayTeam);
     touchedSlots.push(downstreamSlotId);
 
-    // Leaderboard reflects the 3 pts.
+    // Leaderboard reflects the 4 pts.
     await page.goto("/leaderboard");
     const youRow = page.locator("li", {
       has: page.getByText("You", { exact: true }),
     });
     await expect(youRow).toBeVisible({ timeout: 10_000 });
-    await expect(youRow).toContainText("3");
+    await expect(youRow).toContainText("4");
   });
 
   test("finalist podium bet materializes onto total_points", async () => {

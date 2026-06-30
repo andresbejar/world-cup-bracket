@@ -184,6 +184,17 @@ export default async function HowToPlayPage() {
               </span>{" "}
               — shootout goals don&rsquo;t count toward the scoreline.
             </p>
+            <ul className="space-y-2 pt-2">
+              <ScoreLine points="+1" tone="correct">
+                Penalty winner — when you predict a tied knockout you also pick
+                who wins the shootout. That pick is a separate bet: your
+                scoreline still earns its points on its own, and a correct
+                shootout pick adds one more. So an exact tied score is worth{" "}
+                <span className="text-text-primary">3</span> even if you miss
+                the shootout, and{" "}
+                <span className="text-text-primary">4</span> if you nail it too.
+              </ScoreLine>
+            </ul>
 
             <p className="pt-4">
               On top of the matches, two season-long bets — scored

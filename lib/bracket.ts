@@ -554,6 +554,18 @@ export interface ActualMatch {
  *   1 pt — correct outcome but score wrong
  *   0 pts — outcome wrong (regardless of any partial-score match)
  *
+ * Knockout penalty bonus (+1): when the user predicted a *tied* score
+ * they also picked an explicit penalty-shootout winner. For a tied
+ * prediction the scoreline and the shootout pick are TWO INDEPENDENT
+ * bets: an exact 90+ET scoreline scores 3 on its own (a wrong shootout
+ * call does not erase it), and naming the team that advances adds +1 —
+ * the "+1 PT IF CORRECT" affordance on the penalty-winner picker. So a
+ * tied prediction can score 4 (exact + right winner), 3 (exact, wrong
+ * winner), 1 (wrong score, right winner) or 0. The +1 is advancer-based:
+ * it pays whenever the picked team goes through, even if the match was
+ * decided in regulation. Decisive predictions make no shootout pick and
+ * stay on the outcome-gated 3/1/0.
+ *
  * Returns null when the match has not finished yet — scoring runs only
  * on `finished`. A `cancelled` match returns 0 explicitly: the user
  * earned no points, and the row should be marked scored so the polling
@@ -592,9 +604,24 @@ export function computeMatchPoints(
   if (actual.winning_slot_id == null) return null;
   const sameWinner =
     prediction.predicted_winning_slot_id === actual.winning_slot_id;
-  if (exactScore && sameWinner) return 3;
-  if (sameWinner) return 1;
-  return 0;
+  const predictedTie =
+    prediction.predicted_home_score === prediction.predicted_away_score;
+
+  if (predictedTie) {
+    // Tied prediction: the 90+ET scoreline and the shootout-winner pick are
+    // two INDEPENDENT bets. Nailing the exact tied score is worth 3 on its
+    // own — a wrong shootout call doesn't erase it. Naming the team that
+    // advances (the penalty winner) adds the +1 bonus, regardless of score.
+    // So: exact + right winner = 4, exact + wrong winner = 3, wrong score +
+    // right winner = 1, wrong + wrong = 0. The +1 is advancer-based — it
+    // pays whenever the picked team goes through, even if the match was
+    // actually decided in regulation rather than on penalties.
+    return (exactScore ? 3 : 0) + (sameWinner ? 1 : 0);
+  }
+  // Decisive prediction: the scoreline already encodes the advancer (no
+  // shootout pick was made), so it's the standard outcome-gated 3/1/0.
+  if (!sameWinner) return 0;
+  return exactScore ? 3 : 1;
 }
 
 function signOf(n: number): -1 | 0 | 1 {
@@ -765,7 +792,9 @@ export function computeLeaderboard(
   for (const p of predictions) {
     const bucket = counts.get(p.user_id);
     if (!bucket) continue; // prediction for an unknown user — defensive drop
-    if (p.points_awarded === 3) bucket.exact += 1;
+    // 4 = exact tied score + penalty-winner bonus; 3 = exact score. Both
+    // are exact-scoreline hits. 1 = outcome only.
+    if (p.points_awarded != null && p.points_awarded >= 3) bucket.exact += 1;
     else if (p.points_awarded === 1) bucket.outcome += 1;
   }
 
