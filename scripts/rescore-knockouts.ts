@@ -48,9 +48,12 @@ async function main() {
     process.exit(1);
   }
 
+  // rounds.stage is one of 'group','r32','r16','qf','sf','third_place','final'
+  // (there is no literal 'knockout'). Mirror scoreMatch's classification:
+  // anything that isn't the group stage is a knockout match.
   const knockouts = (matches ?? []).filter((m) => {
     const round = Array.isArray(m.rounds) ? m.rounds[0] : m.rounds;
-    return round?.stage === "knockout";
+    return round?.stage != null && round.stage !== "group";
   });
 
   if (knockouts.length === 0) {
