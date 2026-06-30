@@ -767,6 +767,12 @@ export interface LeaderboardEntry {
   exact_count: number;
   /** Predictions with a 1-point outcome-only result. */
   outcome_count: number;
+  /**
+   * Predictions scoring 4 — exact tied score + penalty-winner bonus. A
+   * subset of `exact_count` (the scoreline was exact); surfaced separately
+   * so a user's total reconciles as 3×exact + 1×outcome + 1×penalty.
+   */
+  penalty_count: number;
   rank: number;
 }
 
@@ -787,8 +793,11 @@ export function computeLeaderboard(
   predictions: readonly ScoredPrediction[],
 ): LeaderboardEntry[] {
   // Aggregate per-user exact / outcome counts from the scored predictions.
-  const counts = new Map<string, { exact: number; outcome: number }>();
-  for (const u of users) counts.set(u.id, { exact: 0, outcome: 0 });
+  const counts = new Map<
+    string,
+    { exact: number; outcome: number; penalty: number }
+  >();
+  for (const u of users) counts.set(u.id, { exact: 0, outcome: 0, penalty: 0 });
   for (const p of predictions) {
     const bucket = counts.get(p.user_id);
     if (!bucket) continue; // prediction for an unknown user — defensive drop
@@ -796,6 +805,9 @@ export function computeLeaderboard(
     // are exact-scoreline hits. 1 = outcome only.
     if (p.points_awarded != null && p.points_awarded >= 3) bucket.exact += 1;
     else if (p.points_awarded === 1) bucket.outcome += 1;
+    // A 4-pointer is also a penalty-winner bonus — counted in BOTH exact and
+    // penalty so the surfaced +1 explains why total > 3×exact + 1×outcome.
+    if (p.points_awarded === 4) bucket.penalty += 1;
   }
 
   const entries: LeaderboardEntry[] = users.map((u) => {
@@ -807,6 +819,7 @@ export function computeLeaderboard(
       total_points: u.total_points,
       exact_count: c.exact,
       outcome_count: c.outcome,
+      penalty_count: c.penalty,
       rank: 0,
     };
   });
