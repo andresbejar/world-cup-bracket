@@ -493,13 +493,49 @@ describe("computeMatchPoints", () => {
 
   it("knockout: 90+ET score from regulation only — penalty goals never count", () => {
     // The matches table only stores 90+ET goals (schema § Premise 7).
-    // A 2-2 actual that went to penalties scores fully if user predicted 2-2
-    // AND picked the right penalty winner.
+    // A 2-2 actual that went to penalties scores fully — exact tied score
+    // AND the right penalty winner → 3 (exact) + 1 (penalty bonus) = 4.
     const match = knockoutMatch("finished", 2, 2, "slot-home");
-    expect(computeMatchPoints(pred(2, 2, "slot-home"), match)).toBe(3);
-    // Same 2-2 score, but user picked the wrong penalty winner → outcome
-    // wrong → 0 pts (no partial credit for the score in a knockout).
+    expect(computeMatchPoints(pred(2, 2, "slot-home"), match)).toBe(4);
+    // Same 2-2 score, but user picked the wrong penalty winner. The exact
+    // tied scoreline still scores its 3 — the shootout pick is a separate
+    // bet, so a wrong call costs only the +1 → 3 pts.
+    expect(computeMatchPoints(pred(2, 2, "slot-away"), match)).toBe(3);
+  });
+
+  it("knockout: tied prediction — scoreline (3) and shootout pick (+1) are independent", () => {
+    // Reality: 1-1 at 90+ET, home advanced on penalties.
+    const match = knockoutMatch("finished", 1, 1, "slot-home");
+    // Exact tie + right shootout winner → 3 + 1 = 4.
+    expect(computeMatchPoints(pred(1, 1, "slot-home"), match)).toBe(4);
+    // Exact tie + WRONG shootout winner → the scoreline still pays 3; only
+    // the +1 is forfeited. (This is the case the old gate wrongly zeroed.)
+    expect(computeMatchPoints(pred(1, 1, "slot-away"), match)).toBe(3);
+    // Right shootout winner but wrong tied score (2-2 vs 1-1) → 0 score +
+    // 1 penalty bonus = 1.
+    expect(computeMatchPoints(pred(2, 2, "slot-home"), match)).toBe(1);
+    // Wrong score AND wrong shootout winner → 0.
     expect(computeMatchPoints(pred(2, 2, "slot-away"), match)).toBe(0);
+  });
+
+  it("knockout: tied prediction — advancer-based +1 pays even without a shootout", () => {
+    // Reality: 2-1 at 90+ET, home advanced in regulation (no penalties).
+    const match = knockoutMatch("finished", 2, 1, "slot-home");
+    // User predicted a 1-1 tie with home advancing. Scoreline wrong (1-1 vs
+    // 2-1) → 0, but home did go through → +1. Total 1 (advancer-based bonus).
+    expect(computeMatchPoints(pred(1, 1, "slot-home"), match)).toBe(1);
+  });
+
+  it("knockout: decisive prediction is outcome-gated 3/1/0 — no penalty pick", () => {
+    // Reality: 2-1 at 90+ET, home advanced in regulation (no shootout).
+    const match = knockoutMatch("finished", 2, 1, "slot-home");
+    // Exact decisive score + right advancer → 3 (decisive predictions make
+    // no penalty pick, so the +1 is never on the table).
+    expect(computeMatchPoints(pred(2, 1, "slot-home"), match)).toBe(3);
+    // Right advancer, wrong score → 1.
+    expect(computeMatchPoints(pred(3, 1, "slot-home"), match)).toBe(1);
+    // Wrong advancer → 0.
+    expect(computeMatchPoints(pred(1, 2, "slot-away"), match)).toBe(0);
   });
 
   it("knockout: outcome scored by slot id, not by score sign", () => {
@@ -941,6 +977,18 @@ describe("computeLeaderboard", () => {
     const out = computeLeaderboard(users, preds);
     expect(out).toHaveLength(1);
     expect(out[0].exact_count).toBe(3);
+  });
+
+  it("penalty-bonus predictions (4 pts) count as exact-scoreline hits", () => {
+    const users = [user("alice", 8, "2026-05-15T10:00:00Z")];
+    const preds: ScoredPrediction[] = [
+      { user_id: "alice", points_awarded: 4 }, // exact tie + shootout winner
+      ...exactPred("alice", 1), // a plain exact
+      ...outcomePred("alice", 1),
+    ];
+    const out = computeLeaderboard(users, preds);
+    expect(out[0].exact_count).toBe(2);
+    expect(out[0].outcome_count).toBe(1);
   });
 
   it("predictions with null points_awarded are ignored (not yet scored)", () => {

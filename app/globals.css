@@ -22,7 +22,7 @@
   --accent-muted:  #92400E;  /* accent on dark surface */
 
   /* Semantic, predicted vs real scoring */
-  --green-correct:  #15803D;  /* mossy. +3 pts (exact score) */
+  --green-correct:  #15803D;  /* mossy. exact score (+3, or +4 with penalty bonus) */
   --yellow-partial: #A16207;  /* warm gold. +1 pt (outcome only) */
   --red-wrong:      #B91C1C;  /* deep terracotta. 0 pts (wrong) */
 

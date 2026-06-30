@@ -238,6 +238,7 @@ REALITY PHASE (during tournament)
 - Match outcome correct only: **1 point**
 - Knockout-stage outcomes: must pick a winning team (no ties allowed in outcome predictions; score predictions can still be tied since penalties resolve them)
 - **Knockout score-input UX:** when the user enters a tied score (e.g., 2-2) for a knockout match, a `Penalty winner` selector appears inline below the score inputs. Two pill-radios, one per team. The user MUST pick one before the prediction is considered complete. This is the visual reconciliation of premise 7 (canonical score = 90+ET) with the no-ties-in-knockouts rule.
+- **Penalty-winner bonus (+1):** for a **tied** prediction the 90+ET scoreline and the shootout-winner pick are **two independent bets**. The picker is surfaced in the UI as `+1 PT IF CORRECT`. Nailing the exact tied scoreline scores **3 on its own** — a wrong shootout call does **not** erase it. Naming the team that advances adds **+1**. So a tied prediction scores: exact + right winner = **4**; exact + **wrong** winner = **3** (scoreline still pays); wrong score + right winner = **1**; wrong + wrong = **0**. The +1 is **advancer-based**: it pays whenever the picked team goes through, even if the match was decided in regulation rather than on penalties. Decisive predictions make no shootout pick and stay on the outcome-gated 3/1/0 (and so cap at 3). Implemented in `computeMatchPoints` (`lib/bracket.ts`).
 
 **Tournament-wide bets:**
 - Champion (Final winner): **5 points**
@@ -255,10 +256,12 @@ REALITY PHASE (during tournament)
 | Source | Matches/Items | Max points each | Subtotal |
 |---|---|---|---|
 | Group stage matches | 72 | 3 | 216 |
-| Knockout matches | 32 | 3 | 96 |
+| Knockout matches | 32 | 4* | 128 |
 | Finalist picks | 3 | 5/3/1 | 9 |
 | Third-place slot placements | 8 | 1 | 8 |
-| **Grand total** | | | **329** |
+| **Grand total** | | | **361** |
+
+\* A knockout match pays 4 only when it is penalty-decided and the user nailed both the exact tied scoreline and the shootout winner (3 exact + 1 penalty bonus); otherwise it caps at 3. 128/361 is the theoretical ceiling (every knockout going to penalties and called perfectly), not a realistic target.
 
 Scoring runs server-side when a match's status flips to `finished` via the polling job (or when third-place slots get populated post-group-stage), not live during play.
 

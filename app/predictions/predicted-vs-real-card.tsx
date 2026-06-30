@@ -33,8 +33,9 @@ interface Props {
   predicted: MatchLine | null;
   actual: MatchLine;
   /**
-   * `computeMatchPoints` output: 3 (exact + outcome), 1 (outcome only),
-   * 0 (wrong), or null when there's no prediction to score.
+   * `computeMatchPoints` output: 4 (exact tied score + shootout-winner
+   * bonus), 3 (exact score), 1 (outcome only), 0 (wrong), or null when
+   * there's no prediction to score.
    */
   pointsAwarded: number | null;
   /** Optional footer slot (e.g. the "view everyone's picks" CTA). */
@@ -196,11 +197,13 @@ function PointsBadge({
     );
   }
   const label =
-    pointsAwarded === 3
-      ? "+3 pts · exact"
-      : pointsAwarded === 1
-        ? "+1 pt · outcome"
-        : "0 pts";
+    pointsAwarded >= 4
+      ? "+4 pts · exact + pen"
+      : pointsAwarded === 3
+        ? "+3 pts · exact"
+        : pointsAwarded === 1
+          ? "+1 pt · outcome"
+          : "0 pts";
   return (
     <span
       className={

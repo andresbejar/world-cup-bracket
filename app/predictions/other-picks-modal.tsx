@@ -229,7 +229,7 @@ function PointsBadge({ points }: { points: number | null }) {
       : points >= 1
         ? "text-yellow-partial"
         : "text-red-wrong";
-  const label = points >= 3 ? "+3" : points >= 1 ? "+1" : "0";
+  const label = points >= 4 ? "+4" : points >= 3 ? "+3" : points >= 1 ? "+1" : "0";
   return (
     <span
       className={

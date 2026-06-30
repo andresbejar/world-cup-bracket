@@ -32,6 +32,7 @@ interface MatchSnapshot {
   away_score: number | null;
   winning_slot_id: string | null;
   finished_at: string | null;
+  scheduled_at: string;
 }
 
 const mutatedMatches: MatchSnapshot[] = [];
@@ -39,11 +40,20 @@ const touchedSlots: string[] = []; // slot ids we set real_team_id on (restore �
 let testUserId = "";
 let teamIds: string[] = [];
 
+// Once real wall-clock passes a seed match's kickoff (the tournament is live),
+// the per-match lock (lib/lock-check.ts checkMatchLock) rejects a prediction
+// write to that match with a 403. Push the target's kickoff just into the
+// future so the write is accepted again — same trick as scoring-loop.spec.
+const editableKickoff = () =>
+  new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+
 async function snapshotMatch(id: string) {
   const admin = adminClient();
   const { data, error } = await admin
     .from("matches")
-    .select("id, status, home_score, away_score, winning_slot_id, finished_at")
+    .select(
+      "id, status, home_score, away_score, winning_slot_id, finished_at, scheduled_at",
+    )
     .eq("id", id)
     .single();
   if (error || !data) throw error ?? new Error(`snapshot ${id} failed`);
@@ -96,6 +106,7 @@ test.describe("knockout endgame loop", () => {
           away_score: snap.away_score,
           winning_slot_id: snap.winning_slot_id,
           finished_at: snap.finished_at,
+          scheduled_at: snap.scheduled_at,
         })
         .eq("id", snap.id);
     }
@@ -127,6 +138,14 @@ test.describe("knockout endgame loop", () => {
     await setSlotTeam(r32.home_slot_id, homeTeam);
     await setSlotTeam(r32.away_slot_id, awayTeam);
 
+    // Re-open this (possibly kicked-off) seed match so the prediction write is
+    // accepted — once wall-clock passes the seed kickoff, the per-match lock
+    // would 403 the POST below. Restored by afterAll via the snapshot.
+    await admin
+      .from("matches")
+      .update({ scheduled_at: editableKickoff() })
+      .eq("id", r32.id);
+
     // User predicts a 1-1 draw with the AWAY side winning on penalties.
     const predRes = await request.post("/api/predictions", {
       data: {
@@ -151,8 +170,9 @@ test.describe("knockout endgame loop", () => {
       })
       .eq("id", r32.id);
 
-    // Exact score (1-1) AND correct winner (away) → 3 pts. This is the
-    // case that silently scored 0/null before winning_slot_id existed.
+    // Exact tied score (1-1) AND correct shootout winner (away) → 3 exact
+    // + 1 penalty-winner bonus = 4 pts. (This is also the case that
+    // silently scored 0/null before winning_slot_id existed.)
     const outcome = await scoreMatch(admin, r32.id);
     expect(outcome.ok).toBe(true);
 
@@ -162,7 +182,7 @@ test.describe("knockout endgame loop", () => {
       .eq("user_id", testUserId)
       .eq("match_id", r32.id)
       .single();
-    expect(predRow?.points_awarded).toBe(3);
+    expect(predRow?.points_awarded).toBe(4);
 
     // Advancement writes the winner (away team) into the downstream R16 slot.
     const advance = await populateRealKnockoutSlots(admin);
@@ -176,13 +196,13 @@ test.describe("knockout endgame loop", () => {
     expect(downstream?.real_team_id).toBe(awayTeam);
     touchedSlots.push(downstreamSlotId);
 
-    // Leaderboard reflects the 3 pts.
+    // Leaderboard reflects the 4 pts.
     await page.goto("/leaderboard");
     const youRow = page.locator("li", {
       has: page.getByText("You", { exact: true }),
     });
     await expect(youRow).toBeVisible({ timeout: 10_000 });
-    await expect(youRow).toContainText("3");
+    await expect(youRow).toContainText("4");
   });
 
   test("finalist podium bet materializes onto total_points", async () => {
@@ -240,13 +260,14 @@ test.describe("knockout endgame loop", () => {
       .single();
     expect(pickRow?.points_awarded).toBe(9);
 
-    // total_points = 3 (R32 from prior test) + 9 (finalist) = 12.
+    // total_points = 4 (R32 from prior test: exact tied score + penalty
+    // winner) + 9 (finalist) = 13.
     const { data: userRow } = await admin
       .from("users")
       .select("total_points")
       .eq("id", testUserId)
       .single();
-    expect(userRow?.total_points).toBe(12);
+    expect(userRow?.total_points).toBe(13);
 
     // Idempotent: re-running writes the same totals.
     const again = await scoreFinalists(admin);
@@ -256,6 +277,6 @@ test.describe("knockout endgame loop", () => {
       .select("total_points")
       .eq("id", testUserId)
       .single();
-    expect(userRow2?.total_points).toBe(12);
+    expect(userRow2?.total_points).toBe(13);
   });
 });
