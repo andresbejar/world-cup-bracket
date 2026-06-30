@@ -260,13 +260,14 @@ test.describe("knockout endgame loop", () => {
       .single();
     expect(pickRow?.points_awarded).toBe(9);
 
-    // total_points = 3 (R32 from prior test) + 9 (finalist) = 12.
+    // total_points = 4 (R32 from prior test: exact tied score + penalty
+    // winner) + 9 (finalist) = 13.
     const { data: userRow } = await admin
       .from("users")
       .select("total_points")
       .eq("id", testUserId)
       .single();
-    expect(userRow?.total_points).toBe(12);
+    expect(userRow?.total_points).toBe(13);
 
     // Idempotent: re-running writes the same totals.
     const again = await scoreFinalists(admin);
@@ -276,6 +277,6 @@ test.describe("knockout endgame loop", () => {
       .select("total_points")
       .eq("id", testUserId)
       .single();
-    expect(userRow2?.total_points).toBe(12);
+    expect(userRow2?.total_points).toBe(13);
   });
 });
