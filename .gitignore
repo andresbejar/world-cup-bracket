@@ -62,3 +62,7 @@ backups/
 scripts/dev-login.ts
 .vercel
 .env*
+
+# score verification exports — regenerable, and participant-level data
+score-verification.csv
+*-score-verification.csv
