@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MatchPick } from "@/lib/match-predictions-data";
+import type { MatchPick } from "@/lib/archive";
 
-// "View everyone's picks" CTA + modal (APT-62). Shown on any match that has
-// started (kickoff passed / live / finished). Purely informative, view-only —
-// it lets the family see who called the game right.
+// "View everyone's picks" CTA + modal (APT-62). Purely informative — it lets
+// the family see who called each game right.
 //
-// The CTA only fetches on first open (lazy). The server route is the security
-// boundary: it returns 403 for a not-yet-started match, so even though we only
-// mount this once `hasMatchStarted` is true client-side, a future match can
-// never leak picks.
+// Archive note: this used to fetch /api/match-predictions, where the server
+// route was the security boundary (403 on a not-yet-started match, so picks
+// could never leak early). Every match is long finished and there is no
+// server any more, so it now lazily fetches a static per-match file emitted
+// by scripts/build-archive-snapshot.ts. Kept lazy on purpose: inlining all
+// ~1.5k picks into the page payload would weigh down every render.
 
 interface Props {
   matchId: string;
@@ -43,7 +44,7 @@ export function OtherPicksButton({
     setState({ kind: "loading" });
     try {
       const res = await fetch(
-        `/api/match-predictions?match_id=${encodeURIComponent(matchId)}`,
+        `/match-picks/${encodeURIComponent(matchId)}.json`,
       );
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = (await res.json()) as { picks: MatchPick[] };
@@ -192,19 +193,11 @@ function PickRow({
         : null;
   return (
     <li
-      className={
-        "flex items-center gap-3 rounded-md px-2 py-1.5 " +
-        (pick.is_self ? "bg-surface" : "")
-      }
+      className="flex items-center gap-3 rounded-md px-2 py-1.5"
     >
       <Avatar pick={pick} />
       <span className="min-w-0 flex-1 truncate text-sm text-text-muted">
         {pick.username ?? "Player"}
-        {pick.is_self ? (
-          <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.06em] text-accent">
-            you
-          </span>
-        ) : null}
       </span>
       {tied && winnerCode ? (
         <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">

@@ -1,110 +1,101 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+import { pool, leaderboardEntries } from "@/lib/archive";
 import { TopBar } from "@/app/_components/top-bar";
-import { isAdminUserId } from "@/lib/auth-guard";
-import { readPoolConfig, enabledMethods } from "@/lib/pool/config";
-import { loadPoolState } from "@/lib/pool/queries";
-import { loadLeaderboard } from "@/lib/leaderboard-data";
-import { PoolClient } from "./pool-client";
-import { paymentLinkFor } from "@/lib/pool/links";
 
 export const metadata = { title: "Prize Pool — World Cup Bracket" };
 
-export default async function PoolPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
+// Archive note: this page used to be interactive -- payment-method tiles
+// with deep links, an "I paid" claim button, and an admin confirm/undo
+// control. All of that is gone. The pool is settled and paid out, so the
+// page is now a record of who was in it, not a way to join it.
+//
+// The PayPal Pool URL and every payment handle are deliberately absent:
+// a live payment endpoint on a public, permanently-linked page is a
+// standing liability with no remaining purpose.
 
-  const cfg = readPoolConfig();
-  const isAdmin = isAdminUserId(user.id);
+const champion = leaderboardEntries[0];
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("username, profile_pic, total_points")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!cfg.ok) {
-    return (
-      <div className="min-h-[100svh]">
-        <TopBar
-          active="leaderboard"
-          username={profile?.username ?? "player"}
-          avatar={profile?.profile_pic ?? null}
-          points={profile?.total_points ?? 0}
-          email={user.email ?? ""}
-        />
-        <main className="mx-auto max-w-[640px] px-4 py-12 md:px-8">
+export default function PoolPage() {
+  return (
+    <div className="min-h-[100svh]">
+      <TopBar active="leaderboard" />
+      <main className="mx-auto max-w-[640px] px-4 py-12 md:px-8">
+        <header className="mb-10">
           <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-muted">
-            PRIZE POOL
+            PRIZE POOL · SETTLED
           </p>
           <h1
             className="mt-1 font-display text-5xl leading-tight tracking-tight"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Not set up yet
+            ${pool.potUsd.toLocaleString()}
           </h1>
-          <p className="mt-4 text-sm text-text-muted">
-            The prize pool hasn&rsquo;t been configured for this tournament.
-            Set <code className="font-mono text-text-primary">POOL_BUY_IN_USD</code>{" "}
-            (and at least one payment-method handle) in the environment to
-            enable it.
+          <p className="mt-3 max-w-[52ch] text-text-muted">
+            {pool.confirmedCount} players at ${pool.buyInUsd} each. Tracked
+            here, never held here — the app recorded who had paid, and the
+            money moved directly between people.
           </p>
-        </main>
-      </div>
-    );
-  }
+        </header>
 
-  const [poolState, leaderboard] = await Promise.all([
-    loadPoolState(supabase),
-    loadLeaderboard(1),
-  ]);
+        {champion ? (
+          <section className="mb-10 rounded-md border border-accent-muted/40 bg-surface px-5 py-4">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-accent">
+              PAID OUT TO
+            </p>
+            <p className="mt-1 font-display text-2xl text-text-primary">
+              {champion.username}
+            </p>
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.06em] text-text-dim tabular-nums">
+              {champion.total_points} PTS · {champion.exact_count} EXACT ·{" "}
+              {champion.outcome_count} OUTCOME
+            </p>
+          </section>
+        ) : null}
 
-  const methods = enabledMethods(cfg.config);
-  const linkCtx = {
-    handles: cfg.config.methods,
-    paypalPoolUrl: cfg.config.paypalPoolUrl,
-  };
-  const methodLinks = methods.map((m) => ({
-    method: m,
-    link: paymentLinkFor(m, linkCtx, cfg.config.buyInUsd),
-  }));
+        <h2 className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-text-muted">
+          Entrants
+        </h2>
+        <ol className="overflow-hidden rounded-md border border-border bg-surface">
+          {pool.roster.map((row, idx) => (
+            <li
+              key={row.player_id}
+              className={
+                "flex items-center gap-3 px-5 py-3 " +
+                (idx === pool.roster.length - 1 ? "" : "border-b border-border")
+              }
+            >
+              {row.profile_pic ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={row.profile_pic}
+                  alt=""
+                  width={28}
+                  height={28}
+                  className="h-7 w-7 shrink-0 rounded-sm bg-surface-high"
+                />
+              ) : (
+                <div
+                  aria-hidden
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-surface-high font-mono text-[10px] uppercase text-text-muted"
+                >
+                  {(row.username ?? "??").slice(0, 2)}
+                </div>
+              )}
+              <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                {row.username ?? "player"}
+              </span>
+              <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.06em] text-correct">
+                {row.entry?.status === "confirmed" ? "PAID" : "—"}
+              </span>
+            </li>
+          ))}
+        </ol>
 
-  const yourEntry =
-    poolState.roster.find((r) => r.user_id === user.id)?.entry ?? null;
-  const totalPool = poolState.confirmedCount * cfg.config.buyInUsd;
-  const projectedPool =
-    (poolState.confirmedCount + poolState.claimedCount) * cfg.config.buyInUsd;
-  const currentLeader = leaderboard.entries[0] ?? null;
-
-  return (
-    <div className="min-h-[100svh]">
-      <TopBar
-        active="leaderboard"
-        username={profile?.username ?? "player"}
-        avatar={profile?.profile_pic ?? null}
-        points={profile?.total_points ?? 0}
-        email={user.email ?? ""}
-      />
-      <main className="mx-auto max-w-[840px] px-4 py-12 md:px-8">
-        <PoolClient
-          buyInUsd={cfg.config.buyInUsd}
-          deadline={cfg.config.deadline}
-          methodLinks={methodLinks}
-          yourEntry={yourEntry}
-          roster={poolState.roster}
-          confirmedCount={poolState.confirmedCount}
-          claimedCount={poolState.claimedCount}
-          unpaidCount={poolState.unpaidCount}
-          totalUsers={poolState.totalUsers}
-          totalPool={totalPool}
-          projectedPool={projectedPool}
-          currentLeader={currentLeader}
-          currentUserId={user.id}
-          isAdmin={isAdmin}
-        />
+        <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
+          <Link href="/leaderboard" className="hover:text-text-primary">
+            ← Final standings
+          </Link>
+        </p>
       </main>
     </div>
   );

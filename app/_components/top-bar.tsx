@@ -1,36 +1,34 @@
-import Image from "next/image";
 import Link from "next/link";
-import { SignOutButton } from "@/app/predictions/sign-out-button";
 
-// Global top bar — shared across the authenticated pages. The three-item
-// pill nav (Predictions / Leaderboard / How to Play) keeps the active page
-// obvious via accent fill + aria-current, matches the round-selector pill
-// family, and is intentionally visible on mobile (the previous "012 PTS"
-// entry point was hidden below sm:, which made the leaderboard
-// undiscoverable). The nav strip scrolls horizontally so extra pills fit.
+// Global top bar — shared across the archive's pages. The pill nav keeps
+// the active page obvious via accent fill + aria-current, matches the
+// round-selector pill family, and is intentionally visible on mobile (the
+// old "012 PTS" entry point was hidden below sm:, which made the
+// leaderboard undiscoverable). The nav strip scrolls horizontally so extra
+// pills fit.
+//
+// Archive note: the user pill, points counter, profile link and sign-out
+// are gone. There is no session — the site is a frozen public artifact —
+// so an identity affordance would be a button that lies.
 
-type ActivePage = "predictions" | "leaderboard" | "how-to-play";
+type ActivePage = "home" | "predictions" | "leaderboard" | "how-to-play";
 
 interface Props {
   active: ActivePage;
-  username: string;
-  avatar: string | null;
-  points: number;
-  email: string;
 }
 
 const NAV: { id: ActivePage; label: string; href: string }[] = [
-  { id: "predictions", label: "Predictions", href: "/predictions" },
-  { id: "leaderboard", label: "Leaderboard", href: "/leaderboard" },
-  { id: "how-to-play", label: "How to Play", href: "/how-to-play" },
+  { id: "leaderboard", label: "Final Standings", href: "/leaderboard" },
+  { id: "predictions", label: "The Bracket", href: "/predictions" },
+  { id: "how-to-play", label: "How It Worked", href: "/how-to-play" },
 ];
 
-export function TopBar({ active, username, avatar, points, email }: Props) {
+export function TopBar({ active }: Props) {
   return (
     <header className="border-b border-border">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8 md:py-5">
         <Link
-          href="/predictions"
+          href="/"
           className="font-display text-2xl leading-none"
           aria-label="World Cup Bracket — home"
         >
@@ -75,41 +73,9 @@ export function TopBar({ active, username, avatar, points, email }: Props) {
           </ul>
         </nav>
 
-        <div className="flex items-center gap-3">
-          <span className="hidden font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted tabular-nums sm:inline">
-            <span className="text-text-primary">
-              {points.toString().padStart(3, "0")}
-            </span>{" "}
-            PTS
-          </span>
-          <Link
-            href="/profile"
-            aria-label="Edit profile"
-            className="flex items-center gap-3 rounded-full border border-border bg-surface py-1.5 pl-1.5 pr-3 transition-colors duration-[var(--motion-micro)] hover:border-accent-muted"
-          >
-            {avatar ? (
-              <Image
-                src={avatar}
-                alt=""
-                width={28}
-                height={28}
-                className="rounded-full"
-                unoptimized
-              />
-            ) : (
-              <div
-                aria-hidden
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-high font-mono text-[10px] uppercase text-text-muted"
-              >
-                {username.slice(0, 2)}
-              </div>
-            )}
-            <span className="hidden text-sm sm:inline" title={email}>
-              {username}
-            </span>
-          </Link>
-          <SignOutButton />
-        </div>
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-text-muted">
+          Archive · 2026
+        </span>
       </div>
     </header>
   );

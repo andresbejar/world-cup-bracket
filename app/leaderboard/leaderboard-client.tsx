@@ -1,78 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { LeaderboardPayload } from "@/lib/leaderboard-data";
 import type { LeaderboardEntry } from "@/lib/bracket";
 
-// Polling cadence per design § Performance Notes: 30s while the tab is
-// visible. We pause cleanly when the user backgrounds the tab — that's
-// where the real savings come from over a 2-month tournament window.
-const POLL_MS = 30_000;
+// Archive note: this used to poll /api/leaderboard every 30s with a
+// visibility-aware pause. The tournament is over and the standings are
+// frozen in data/archive-snapshot.json, so the entries arrive as props and
+// never change. No fetch, no interval, no client state — which is also
+// what lets this page prerender to static HTML.
 
 interface Props {
-  initialPayload: LeaderboardPayload;
-  currentUserId: string;
+  entries: LeaderboardEntry[];
+  totalPlayers: number;
 }
 
-export function LeaderboardClient({ initialPayload, currentUserId }: Props) {
-  const [payload, setPayload] = useState<LeaderboardPayload>(initialPayload);
-  const [paused, setPaused] = useState(false);
-
-  const inFlight = useRef(false);
-  const fetchOnce = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    try {
-      const res = await fetch("/api/leaderboard", { cache: "no-store" });
-      if (!res.ok) return;
-      const next = (await res.json()) as LeaderboardPayload;
-      setPayload(next);
-    } catch (e) {
-      console.error("[leaderboard] poll failed:", e);
-    } finally {
-      inFlight.current = false;
-    }
-  }, []);
-
-  // Visibility-aware polling. setInterval runs while visible; we
-  // pause + resume on visibilitychange. On resume we kick a fresh
-  // fetch immediately so the table catches up.
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-    function start() {
-      setPaused(false);
-      fetchOnce();
-      timer = setInterval(fetchOnce, POLL_MS);
-    }
-    function stop() {
-      setPaused(true);
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-    }
-    function onVisibility() {
-      if (document.visibilityState === "hidden") stop();
-      else start();
-    }
-    if (document.visibilityState === "visible") start();
-    else stop();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      if (timer) clearInterval(timer);
-    };
-  }, [fetchOnce]);
-
-  const empty = payload.entries.length === 0;
-
+export function LeaderboardClient({ entries, totalPlayers }: Props) {
   return (
     <>
       <header className="mb-8 flex items-end justify-between gap-4">
         <div>
           <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-muted">
-            STANDINGS · {paused ? "PAUSED" : "LIVE 30s"}
+            FINAL STANDINGS
           </p>
           <h1
             className="mt-1 font-display text-5xl leading-tight tracking-tight"
@@ -82,42 +30,31 @@ export function LeaderboardClient({ initialPayload, currentUserId }: Props) {
           </h1>
         </div>
         <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-muted whitespace-nowrap">
-          <span className="tabular-nums">{payload.total_players}</span>{" "}
-          {payload.total_players === 1 ? "PLAYER" : "PLAYERS"}
-          {payload.total_players > payload.entries.length ? (
-            <span className="block text-text-dim">
-              SHOWING TOP {payload.entries.length}
-            </span>
-          ) : null}
+          <span className="tabular-nums">{totalPlayers}</span>{" "}
+          {totalPlayers === 1 ? "PLAYER" : "PLAYERS"}
         </p>
       </header>
 
-      {empty ? <EmptyState /> : null}
-
-      {!empty ? (
-        <ol className="overflow-hidden rounded-md border border-border bg-surface">
-          {payload.entries.map((entry, idx) => (
-            <LeaderboardRow
-              key={entry.user_id}
-              entry={entry}
-              isYou={entry.user_id === currentUserId}
-              isLast={idx === payload.entries.length - 1}
-            />
-          ))}
-        </ol>
-      ) : null}
+      <ol className="overflow-hidden rounded-md border border-border bg-surface">
+        {entries.map((entry, idx) => (
+          <LeaderboardRow
+            key={entry.user_id}
+            entry={entry}
+            isChampion={idx === 0}
+            isLast={idx === entries.length - 1}
+          />
+        ))}
+      </ol>
 
       <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-        Tiebreakers: total points → exact-score predictions → outcome predictions →
-        earliest signup.{" "}
-        {paused
-          ? "Polling paused while this tab is hidden."
-          : "Auto-refreshes every 30s."}
+        Tiebreakers: total points → exact-score predictions → outcome
+        predictions → earliest signup. The top two finished level on 99;
+        the chain settled it.
       </p>
 
       <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
         <Link href="/predictions" className="hover:text-text-primary">
-          ← Back to your predictions
+          ← Browse the brackets
         </Link>
       </p>
     </>
@@ -126,11 +63,11 @@ export function LeaderboardClient({ initialPayload, currentUserId }: Props) {
 
 function LeaderboardRow({
   entry,
-  isYou,
+  isChampion,
   isLast,
 }: {
   entry: LeaderboardEntry;
-  isYou: boolean;
+  isChampion: boolean;
   isLast: boolean;
 }) {
   return (
@@ -138,13 +75,13 @@ function LeaderboardRow({
       className={
         "flex items-center gap-4 px-5 py-3.5 " +
         (isLast ? "" : "border-b border-border ") +
-        (isYou ? "bg-surface-high" : "")
+        (isChampion ? "bg-surface-high" : "")
       }
     >
       <span
         className={
           "w-9 shrink-0 font-mono text-sm font-bold tabular-nums " +
-          (isYou ? "text-accent" : "text-text-muted")
+          (isChampion ? "text-accent" : "text-text-muted")
         }
       >
         {entry.rank.toString().padStart(2, "0")}
@@ -152,17 +89,12 @@ function LeaderboardRow({
       <Avatar entry={entry} />
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-2 text-sm">
-          <span
-            className={
-              "truncate font-semibold " +
-              (isYou ? "text-text-primary" : "text-text-primary")
-            }
-          >
+          <span className="truncate font-semibold text-text-primary">
             {entry.username ?? "player"}
           </span>
-          {isYou ? (
-            <span className="rounded-full bg-accent px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-bg">
-              You
+          {isChampion ? (
+            <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-bg">
+              Champion
             </span>
           ) : null}
         </p>
@@ -181,7 +113,7 @@ function LeaderboardRow({
       <span
         className={
           "shrink-0 font-mono text-lg font-bold tabular-nums " +
-          (isYou ? "text-accent" : "text-text-primary")
+          (isChampion ? "text-accent" : "text-text-primary")
         }
       >
         {entry.total_points}
@@ -193,13 +125,13 @@ function LeaderboardRow({
 function Avatar({ entry }: { entry: LeaderboardEntry }) {
   if (entry.profile_pic) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={entry.profile_pic}
         alt=""
         width={32}
         height={32}
-        className="h-8 w-8 rounded-sm bg-surface-high"
-        referrerPolicy="no-referrer"
+        className="h-8 w-8 shrink-0 rounded-sm bg-surface-high"
       />
     );
   }
@@ -209,22 +141,6 @@ function Avatar({ entry }: { entry: LeaderboardEntry }) {
       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-surface-high font-mono text-[11px] font-bold uppercase text-text-muted tabular-nums"
     >
       {(entry.username ?? "??").slice(0, 2)}
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-md border border-dashed border-border bg-surface px-6 py-12 text-center">
-      <p
-        className="font-display text-2xl"
-        style={{ fontFamily: "var(--font-display)" }}
-      >
-        No predictions scored yet.
-      </p>
-      <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.06em] text-text-muted">
-        Send this URL to family — the leaderboard fills in once matches start.
-      </p>
     </div>
   );
 }

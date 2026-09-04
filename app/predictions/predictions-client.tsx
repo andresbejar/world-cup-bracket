@@ -13,7 +13,6 @@ import { KnockoutCard } from "./knockout-card";
 import { BracketSidebar } from "./bracket-sidebar";
 import { ThirdPlaceCluster, type ThirdPlaceRow } from "./third-place-cluster";
 import { PredictedVsRealCard } from "./predicted-vs-real-card";
-import { PodiumBanner } from "./podium-banner";
 import { OtherPicksButton } from "./other-picks-modal";
 import {
   FinalistPicks,
@@ -47,7 +46,6 @@ import type {
   HydratedTeam,
 } from "@/lib/group-data";
 
-const SAVE_DEBOUNCE_MS = 500;
 
 // Run computeGroupStandings for all 12 groups given a per-group score map.
 // Shared by the blended, predicted-only, and real-only standings memos.
@@ -117,6 +115,10 @@ interface Props {
   initialFinalistPicks: HydratedFinalistPicks;
   slotLabelById: Record<string, string>;
   realTeamIdBySlotLabel: Record<string, string>;
+  /** Whose bracket this is — the archive browses all 16. */
+  ownerLabel: string;
+  ownerPoints: number;
+  ownerRank: number;
 }
 
 interface PredictionState {
@@ -149,7 +151,7 @@ export function PredictionsClient({
   );
 
   // Single source of truth for every prediction (group + knockout), keyed by match_id.
-  const [predictions, setPredictions] = useState<Map<string, PredictionState>>(
+  const [predictions] = useState<Map<string, PredictionState>>(
     () => {
       const m = new Map<string, PredictionState>();
       for (const p of initialPredictions) {
@@ -162,129 +164,17 @@ export function PredictionsClient({
       return m;
     },
   );
-  const [saveStatus, setSaveStatus] = useState<Map<string, SaveStatus>>(
-    new Map(),
-  );
-
-  // Tournament-wide podium bet (independent of bracket cascade).
-  const [finalistPicks, setFinalistPicks] = useState<FinalistPicksState>(
-    initialFinalistPicks,
-  );
-  const [finalistSaveStatus, setFinalistSaveStatus] =
-    useState<SaveStatus>("idle");
-
-  const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
-    new Map(),
-  );
-  useEffect(() => {
-    return () => {
-      for (const t of pendingTimers.current.values()) clearTimeout(t);
-      pendingTimers.current.clear();
-    };
-  }, []);
-
-  const flushSave = useCallback(
-    async (matchId: string, state: PredictionState) => {
-      setSaveStatus((s) => new Map(s).set(matchId, "saving"));
-      try {
-        const res = await fetch("/api/predictions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            match_id: matchId,
-            predicted_home_score: state.home,
-            predicted_away_score: state.away,
-            predicted_winning_slot_id: state.winner,
-          }),
-        });
-        if (!res.ok) throw new Error(`save failed ${res.status}`);
-        setSaveStatus((s) => new Map(s).set(matchId, "saved"));
-      } catch (e) {
-        console.error("[predictions] save failed", e);
-        setSaveStatus((s) => new Map(s).set(matchId, "error"));
-      }
-    },
-    [],
-  );
-
-  const flushFinalistSave = useCallback(
-    async (next: FinalistPicksState) => {
-      setFinalistSaveStatus("saving");
-      try {
-        const res = await fetch("/api/finalist-picks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(next),
-        });
-        if (!res.ok) throw new Error(`save failed ${res.status}`);
-        setFinalistSaveStatus("saved");
-      } catch (e) {
-        console.error("[finalist-picks] save failed", e);
-        setFinalistSaveStatus("error");
-      }
-    },
-    [],
-  );
-
-  const writeFinalistPicks = useCallback(
-    (next: FinalistPicksState) => {
-      setFinalistPicks(next);
-      const key = "finalist:row";
-      const existing = pendingTimers.current.get(key);
-      if (existing) clearTimeout(existing);
-      const timer = setTimeout(() => {
-        flushFinalistSave(next);
-        pendingTimers.current.delete(key);
-      }, SAVE_DEBOUNCE_MS);
-      pendingTimers.current.set(key, timer);
-    },
-    [flushFinalistSave],
-  );
-
-  const writePrediction = useCallback(
-    (matchId: string, next: PredictionState) => {
-      setPredictions((prev) => {
-        const m = new Map(prev);
-        m.set(matchId, next);
-        return m;
-      });
-      const existing = pendingTimers.current.get(matchId);
-      if (existing) clearTimeout(existing);
-      const timer = setTimeout(() => {
-        flushSave(matchId, next);
-        pendingTimers.current.delete(matchId);
-      }, SAVE_DEBOUNCE_MS);
-      pendingTimers.current.set(matchId, timer);
-    },
-    [flushSave],
-  );
-
-  // Knockout variant: a tied score with no penalty-winner pick is not yet
-  // a valid prediction — the API rejects it (validateKnockoutPrediction),
-  // which used to flash a spurious "retry". Update local state so the
-  // penalty picker appears, but hold the save until the pick lands (the
-  // card re-fires onChange with the winner set).
-  const writeKnockoutPrediction = useCallback(
-    (matchId: string, next: PredictionState) => {
-      const awaitingPenaltyPick =
-        next.home === next.away && next.winner == null;
-      if (!awaitingPenaltyPick) {
-        writePrediction(matchId, next);
-        return;
-      }
-      setPredictions((prev) => {
-        const m = new Map(prev);
-        m.set(matchId, next);
-        return m;
-      });
-      const existing = pendingTimers.current.get(matchId);
-      if (existing) {
-        clearTimeout(existing);
-        pendingTimers.current.delete(matchId);
-      }
-    },
-    [writePrediction],
-  );
+  // Archive: the tournament is over, every match is long past its kickoff,
+  // so isMatchLocked() is true for all 104 and the steppers never fire. The
+  // debounced POST /api/predictions + /api/finalist-picks machinery that
+  // used to live here is gone along with those routes — the picks below are
+  // whatever this player actually submitted before each match locked.
+  const saveStatus = new Map<string, SaveStatus>();
+  const [finalistPicks] = useState<FinalistPicksState>(initialFinalistPicks);
+  const finalistSaveStatus: SaveStatus = "idle";
+  const writePrediction = useCallback((_matchId: string, _next: PredictionState) => {}, []);
+  const writeKnockoutPrediction = useCallback((_matchId: string, _next: PredictionState) => {}, []);
+  const writeFinalistPicks = useCallback((_next: FinalistPicksState) => {}, []);
 
   // Group standings — computeGroupStandings × 12 — from finished results only
   // (current real standings; unplayed matches contribute nothing). Now that the
@@ -580,15 +470,6 @@ export function PredictionsClient({
   return (
     <div className="min-h-[100svh]">
       <main className="mx-auto max-w-[1440px] px-4 pb-24 pt-8 md:px-8">
-        {isPodium ? null : (
-          <PodiumBanner
-            filledCount={finalistFilledCount}
-            totalCount={3}
-            firstKickoffAt={firstKickoffAt}
-            onJump={() => setActiveRoundId("podium")}
-          />
-        )}
-
         <RoundSelector
           rounds={rounds}
           activeId={activeRoundId}

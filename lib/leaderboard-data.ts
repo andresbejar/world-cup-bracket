@@ -1,17 +1,17 @@
-// Leaderboard data loader. Wraps the pure computeLeaderboard from
-// lib/bracket.ts with the database query bits — used both by the
-// initial server render and by the /api/leaderboard route the
-// client polls every 30s.
+// Leaderboard data helpers.
+//
+// Archive note: loadLeaderboard() is gone along with the Supabase read
+// path — the ranked entries now come frozen from data/archive-snapshot.json
+// via lib/archive.ts. What remains is the pagination helper and its
+// regression test, which are kept deliberately: they encode the
+// PostgREST 1000-row-cap lesson documented in
+// docs/leaderboard-counts-explainer.md, and the snapshot generator
+// depends on that same contract.
 
-import {
-  computeLeaderboard,
-  type LeaderboardEntry,
-  type LeaderboardUser,
-  type ScoredPrediction,
-} from "./bracket";
-import { createClient } from "./supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { LeaderboardEntry, ScoredPrediction } from "./bracket";
 
-type ServerClient = Awaited<ReturnType<typeof createClient>>;
+type ServerClient = SupabaseClient;
 
 // PostgREST caps a single response at `db-max-rows` (1000 by default on
 // Supabase). The leaderboard's exact/outcome counts are aggregated from
@@ -57,38 +57,4 @@ export interface LeaderboardPayload {
   /** ISO timestamp of when this snapshot was computed — client uses it
    * to display a "last updated" hint. */
   computed_at: string;
-}
-
-/**
- * Top-N ranked entries computed against current materialized totals.
- * Default limit of 50 matches the AC; pass a different cap if needed
- * (e.g. for an export or admin view).
- */
-export async function loadLeaderboard(
-  limit = 50,
-): Promise<LeaderboardPayload> {
-  const supabase = await createClient();
-  const [{ data: users, error: usersErr }, predictions] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id, username, profile_pic, total_points, created_at")
-      .eq("is_banned", false),
-    fetchAllScoredPredictions(supabase),
-  ]);
-  if (usersErr) throw usersErr;
-
-  const usersList: LeaderboardUser[] = (users ?? []).map((u) => ({
-    id: u.id as string,
-    username: (u.username as string | null) ?? null,
-    profile_pic: (u.profile_pic as string | null) ?? null,
-    total_points: (u.total_points as number) ?? 0,
-    created_at: u.created_at as string,
-  }));
-  const entries = computeLeaderboard(usersList, predictions).slice(0, limit);
-
-  return {
-    entries,
-    total_players: usersList.length,
-    computed_at: new Date().toISOString(),
-  };
 }
