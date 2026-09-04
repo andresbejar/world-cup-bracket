@@ -208,25 +208,12 @@ export default function ArchiveHomePage() {
         </nav>
 
         <footer className="border-t border-border pt-6">
-          <p className="max-w-[62ch] text-sm text-text-muted">
-            Built over five weeks in 2026 for {meta.counts.players} family
-            members and friends: Next.js and Supabase on Vercel, with the
-            scoring engine as pure functions under full test coverage.
-            Predictions were bound to bracket <em>slots</em> rather than teams,
-            which is what let reality cleanly replace each pick as the bracket
-            resolved. Results were pulled from a football results API and
-            scored idempotently within minutes of each final whistle.
-          </p>
-          <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim">
-            Archived {fmt(meta.generated_at)} 2026 · static snapshot, no
-            database · sign-in and scoring retired ·{" "}
-            <a
-              href="https://github.com/andresbejar/world-cup-bracket"
-              className="underline decoration-border underline-offset-4 hover:text-text-primary"
-            >
-              source on GitHub
-            </a>
-          </p>
+          <a
+            href="https://github.com/andresbejar/world-cup-bracket"
+            className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-dim underline decoration-border underline-offset-4 transition-colors duration-[var(--motion-micro)] hover:text-text-primary"
+          >
+            Source on GitHub
+          </a>
         </footer>
       </main>
     </div>
