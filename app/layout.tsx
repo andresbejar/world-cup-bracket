@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { BracketResetBanner } from "./_components/bracket-reset-banner";
 
 // Instrument Serif: display, wordmark, h1, h2 only. Never body or UI labels.
 const instrumentSerif = Instrument_Serif({
@@ -51,7 +50,6 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full bg-bg text-text-primary">
-        <BracketResetBanner />
         {children}
       </body>
     </html>

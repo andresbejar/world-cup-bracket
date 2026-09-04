@@ -127,7 +127,7 @@ async function main() {
     admin.from("teams").select("id, name, code, flag_url, group_letter").order("group_letter", { ascending: true }).order("code", { ascending: true }),
     admin.from("bracket_slots").select("id, slot_label, real_team_id"),
     admin.from("matches").select("id, round_id, home_slot_id, away_slot_id, scheduled_at, home_score, away_score, status, winning_slot_id").order("scheduled_at", { ascending: true }),
-    admin.from("predictions").select("user_id, match_id, predicted_home_score, predicted_away_score, predicted_winning_slot_id"),
+    admin.from("predictions").select("user_id, match_id, predicted_home_score, predicted_away_score, predicted_winning_slot_id, points_awarded"),
     admin.from("finalist_picks").select("user_id, first_place_team_id, second_place_team_id, third_place_team_id"),
     admin.from("pool_entries").select("user_id, status, method, notes, claimed_at, confirmed_at"),
   ]);
@@ -274,6 +274,46 @@ async function main() {
     };
   });
   const confirmedCount = poolRoster.filter((r) => r.entry?.status === "confirmed").length;
+
+  // --- per-match picks, emitted as individual static files ---
+  // The "see everyone's picks" modal used to fetch /api/match-predictions.
+  // Inlining all 1.5k picks into the page payload would bloat every render,
+  // so instead each match gets its own small JSON under public/match-picks/
+  // and the modal keeps its lazy fetch — just against a static file now.
+  const picksDir = resolve(process.cwd(), "public/match-picks");
+  if (!DRY_RUN) await mkdir(picksDir, { recursive: true });
+  const picksByMatch = new Map<string, unknown[]>();
+  for (const p of allPreds ?? []) {
+    const slug = slugById.get(p.user_id as string);
+    if (!slug) continue;
+    const matchId = p.match_id as string;
+    let arr = picksByMatch.get(matchId);
+    if (!arr) {
+      arr = [];
+      picksByMatch.set(matchId, arr);
+    }
+    arr.push({
+      username: slug,
+      profile_pic: avatarBySlug.get(slug) ?? null,
+      predicted_home_score: p.predicted_home_score,
+      predicted_away_score: p.predicted_away_score,
+      predicted_winning_slot_id: p.predicted_winning_slot_id,
+      points_awarded: p.points_awarded ?? null,
+    });
+  }
+  let picksFiles = 0;
+  for (const [matchId, picks] of picksByMatch) {
+    picks.sort(
+      (a, b) =>
+        ((b as { points_awarded: number | null }).points_awarded ?? -1) -
+        ((a as { points_awarded: number | null }).points_awarded ?? -1),
+    );
+    if (!DRY_RUN) {
+      await writeFile(resolve(picksDir, `${matchId}.json`), JSON.stringify({ picks }));
+    }
+    picksFiles++;
+  }
+  console.log(`Per-match pick files: ${picksFiles}`);
 
   const finishedMatches = (matches ?? []).filter((m) => m.status === "finished").length;
   const exactCount = entries.reduce((n, e) => n + e.exact_count, 0);

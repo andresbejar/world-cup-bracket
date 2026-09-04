@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { readPoolConfig } from "@/lib/pool/config";
+import { pool } from "@/lib/archive";
 import { FINALIST_POINTS } from "@/lib/bracket";
 import { TopBar } from "@/app/_components/top-bar";
 
@@ -62,34 +60,10 @@ function ScoreLine({
   );
 }
 
-export default async function HowToPlayPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("username, profile_pic, total_points")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const cfg = readPoolConfig();
-
-  const username = profile?.username ?? "player";
-  const avatar = profile?.profile_pic ?? null;
-  const points = profile?.total_points ?? 0;
-
+export default function HowToPlayPage() {
   return (
     <div className="min-h-[100svh]">
-      <TopBar
-        active="how-to-play"
-        username={username}
-        avatar={avatar}
-        points={points}
-        email={user.email ?? ""}
-      />
+      <TopBar active="how-to-play" />
       <main className="mx-auto max-w-[840px] px-4 py-12 md:px-8">
         <header className="mb-10">
           <h1 className="font-display text-3xl text-text-primary md:text-5xl">
@@ -116,24 +90,26 @@ export default async function HowToPlayPage() {
             </p>
           </Section>
 
-          {cfg.ok ? (
-            <Section title="Buy-in">
-              <p>
-                Entry is{" "}
-                <span className="font-mono font-bold tabular-nums text-text-primary">
-                  ${cfg.config.buyInUsd}
-                </span>{" "}
-                into the common pool. Head to the{" "}
-                <Link
-                  href="/pool"
-                  className="text-text-primary underline decoration-border underline-offset-4 transition-colors duration-[var(--motion-micro)] hover:decoration-accent"
-                >
-                  Pool
-                </Link>{" "}
-                page for payment instructions and to confirm you&rsquo;ve paid.
-              </p>
-            </Section>
-          ) : null}
+          <Section title="Buy-in">
+            <p>
+              Entry was{" "}
+              <span className="font-mono font-bold tabular-nums text-text-primary">
+                ${pool.buyInUsd}
+              </span>{" "}
+              into a common pool, which closed at{" "}
+              <span className="font-mono font-bold tabular-nums text-text-primary">
+                ${pool.potUsd}
+              </span>{" "}
+              across {pool.confirmedCount} players. See the{" "}
+              <Link
+                href="/pool"
+                className="text-text-primary underline decoration-border underline-offset-4 transition-colors duration-[var(--motion-micro)] hover:decoration-accent"
+              >
+                Pool
+              </Link>{" "}
+              page. It has been paid out and settled.
+            </p>
+          </Section>
 
           <Section title="Deadlines & locking">
             <p>
